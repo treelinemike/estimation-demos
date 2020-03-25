@@ -6,6 +6,9 @@
 % restart
 close all; clear all; clc;
 
+% options
+sigma_v = 0.005; % standard deviation of sensor noise
+
 % simulation time parameters
 t0 = 0;       % [s] simulation start time
 tf = 20;      % [s] simulation end time
@@ -57,6 +60,7 @@ tau_d = 2*pi/omega_d
 ph = [];
 figure;
 set(gcf,'Position',[0345 0450 1114 0243]);
+ax = subplot(2,1,1);
 hold on; grid on;
 plot(time,0*ones(1,length(time)),'k--');
 ph(end+1) = plot(time,data(1,:),'Color',[0 0.7 0],'LineWidth',1.6);
@@ -66,40 +70,54 @@ ylabel('\bf Angular Position [rad]');
 legend(ph,'Truth','Model');
 xlim([min(time) max(time)]);
 
-%% Animate result in a new plot
-figure;
-hold on; grid on;
+% now compute measurements of vertical displacement of pendulum tip from
+% center of rotation (observed quantity)
 
-% animate each frame of results
-for tIdx = 1:size(data,2)
-    
-    % extract state at current timestep
-    theta = data(1,tIdx);
-    theta_dot = data(2,tIdx);
-   
-    % recover length
-    l = sysParams.l;
-    
-    % determine bob location
-    bob_x = l*sin(theta);
-    bob_y = -l*cos(theta);
-    
-    % clear axes and start plotting the current frame
-    cla;
-    
-    % plot XYZ (all black) and xyz (x=red, y=green, z=blue) coordinate frames
-    plot(0,0,'k.','MarkerSize',30);
-    plot([0 bob_x],[0 bob_y],'k-','LineWidth',6);
-    plot(bob_x,bob_y,'o','MarkerSize',30,'LineWidth',6,'MarkerFaceColor',[1 1 1]);
-    
-    % finish formatting axes
-    axis equal;
-    xlabel('\bfX');
-    ylabel('\bfY');
-    xlim([-1.2*l 1.2*l]);
-    ylim([-1.2*l 1.2*l]);
-	drawnow;
-end
+ax(end+1) = subplot(2,1,2);
+hold on; grid on;
+z_true = sysParams.l*cos(data(1,:));
+linkaxes(ax,'x');
+
+% sample the true signal
+dt_samp = 0.25;  % observation sampling period
+t_samp = 0:dt_samp:time(end);
+z_samp = interp1(time,z_true,t_samp)' + sigma_v*randn(length(t_samp),1);
+plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
+plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+%% Animate result in a new plot
+% figure;
+% hold on; grid on;
+% 
+% % animate each frame of results
+% for tIdx = 1:size(data,2)
+%     
+%     % extract state at current timestep
+%     theta = data(1,tIdx);
+%     theta_dot = data(2,tIdx);
+%    
+%     % recover length
+%     l = sysParams.l;
+%     
+%     % determine bob location
+%     bob_x = l*sin(theta);
+%     bob_y = -l*cos(theta);
+%     
+%     % clear axes and start plotting the current frame
+%     cla;
+%     
+%     % plot XYZ (all black) and xyz (x=red, y=green, z=blue) coordinate frames
+%     plot(0,0,'k.','MarkerSize',30);
+%     plot([0 bob_x],[0 bob_y],'k-','LineWidth',6);
+%     plot(bob_x,bob_y,'o','MarkerSize',30,'LineWidth',6,'MarkerFaceColor',[1 1 1]);
+%     
+%     % finish formatting axes
+%     axis equal;
+%     xlabel('\bfX');
+%     ylabel('\bfY');
+%     xlim([-1.2*l 1.2*l]);
+%     ylim([-1.2*l 1.2*l]);
+% 	drawnow;
+% end
 
 % propagate state
 function  Xdot = propDynamics(t,X,sysParams)
