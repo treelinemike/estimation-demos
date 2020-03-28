@@ -6,8 +6,12 @@
 % restart
 close all; clear all; clc;
 
+% reset random number generator using consistant seed
+% although noise is random it will be the same for every run
+rng(2374,'twister');
+
 % options
-sigma_v = 0.005; % standard deviation of sensor noise
+sigma_v = 0.002; % standard deviation of sensor noise
 
 % simulation time parameters
 t0 = 0;       % [s] simulation start time
@@ -59,7 +63,7 @@ tau_d = 2*pi/omega_d
 %% plot time series for detail trajectory
 ph = [];
 figure;
-set(gcf,'Position',[0345 0450 1114 0243]);
+set(gcf,'Position',[0345 0188 1275 0505]);
 ax = subplot(2,1,1);
 hold on; grid on;
 plot(time,0*ones(1,length(time)),'k--');
@@ -84,6 +88,7 @@ t_samp = 0:dt_samp:time(end);
 z_samp = interp1(time,z_true,t_samp)' + sigma_v*randn(length(t_samp),1);
 plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
 plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+
 %% Animate result in a new plot
 % figure;
 % hold on; grid on;
