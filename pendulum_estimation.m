@@ -1,9 +1,9 @@
 % restart
 close all; clear all; clc;
 
-% reset random number generator using consistant seed
-% although noise is random it will be the same for every run
-rng(2374,'twister');
+% general options
+doAnimateSystem = 1;
+
 
 % simulation time parameters
 SIGMA_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
@@ -40,6 +40,10 @@ X = X0;
 time = [t0];
 data = [X0];
 theta_ddot =  -(sysParams.c/(sysParams.m*sysParams.l^2))*X0(2)-1*(sysParams.g/sysParams.l)*sin(X0(1))*ones(2,1);
+
+% reset random number generator using consistant seed
+% although noise is random it will be the same for every run
+rng(2374,'twister');
 
 % run simulation
 for t = t0:dt:(tf-dt)
@@ -144,40 +148,43 @@ linkaxes(ax2,'x');
 xlim([0,max(time)]);
 
 %% Animate result in a new plot
-% figure;
-% hold on; grid on;
-% 
-% % animate each frame of results
-% for tIdx = 1:size(data,2)
-%     
-%     % extract state at current timestep
-%     theta = data(1,tIdx);
-%     theta_dot = data(2,tIdx);
-%    
-%     % recover length
-%     l = sysParams.l;
-%     
-%     % determine bob location
-%     bob_x = l*sin(theta);
-%     bob_y = -l*cos(theta);
-%     
-%     % clear axes and start plotting the current frame
-%     cla;
-%     
-%     % plot XYZ (all black) and xyz (x=red, y=green, z=blue) coordinate frames
-%     plot(0,0,'k.','MarkerSize',30);
-%     plot([0 bob_x],[0 bob_y],'k-','LineWidth',6);
-%     plot(bob_x,bob_y,'o','MarkerSize',30,'LineWidth',6,'MarkerFaceColor',[1 1 1]);
-%     
-%     % finish formatting axes
-%     axis equal;
-%     xlabel('\bfX');
-%     ylabel('\bfY');
-%     xlim([-1.2*l 1.2*l]);
-%     ylim([-1.2*l 1.2*l]);
-% 	drawnow;
-% end
+if(doAnimateSystem)
+    figure;
+    hold on; grid on;
+    
+    % animate each frame of results
+    for tIdx = 1:size(data,2)
+        
+        % extract state at current timestep
+        theta = data(1,tIdx);
+        theta_dot = data(2,tIdx);
+        
+        % recover length
+        l = sysParams.l;
+        
+        % determine bob location
+        bob_x = l*sin(theta);
+        bob_y = -l*cos(theta);
+        
+        % clear axes and start plotting the current frame
+        cla;
+        
+        % plot XYZ (all black) and xyz (x=red, y=green, z=blue) coordinate frames
+        plot(0,0,'k.','MarkerSize',30);
+        plot([0 bob_x],[0 bob_y],'k-','LineWidth',6);
+        plot(bob_x,bob_y,'o','MarkerSize',30,'LineWidth',6,'MarkerFaceColor',[1 1 1]);
+        
+        % finish formatting axes
+        axis equal;
+        xlabel('\bfX');
+        ylabel('\bfY');
+        xlim([-1.2*l 1.2*l]);
+        ylim([-1.2*l 1.2*l]);
+        drawnow;
+    end
+end
 
+%%
 % now we have a true trajectory and a set of observations
 % we will step through time and filter to the current timestep
 
