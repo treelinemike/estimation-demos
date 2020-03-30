@@ -2,22 +2,22 @@
 close all; clear all; clc;
 
 % general options
-doAnimateSystem = 1;
+doAnimateSystem = 0;
 
 
 % simulation time parameters
 SIGMA_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 t0 = 0;       % [s] simulation start time
 tf = 20;      % [s] simulation end time
-dt = 0.1;     % [s] timestep size
+dt = 0.01;     % [s] timestep size
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % sampling options
-SIGMA_v = 0.002;    % standard deviation of sensor noise; assumed to be well known (truth value = value used in estimator)
+COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
 Np = 2000;                       % number of particles
-SIGMA_w = [0.02^2 0; 0 0.1^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+COV_w = [0.02^2 0; 0 0.1^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
@@ -106,7 +106,8 @@ linkaxes(ax,'x');
 % sample the true signal
 dt_samp = 0.25;  % observation sampling period
 t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
-z_samp = interp1(time,z_true,t_samp)' + SIGMA_v*randn(length(t_samp),1);
+z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
+x_samp = interp1(time,data(1:2,:)',t_samp)';
 plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
 plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
 
@@ -190,19 +191,23 @@ end
 
 % first, draw a sample of particles from the initial state
 mu = data(1:2,1);
-Xp = mvnrnd(mu',SIGMA_w,Np)';
+COV = COV_w
+Xp = mvnrnd(mu',COV,Np)';
 x_true = data(:,1);
 
-% initialize figure
-figure; 
-set(gcf,'Position',[0207 0346 1527 0420]);
+
+
 
 % step through time
 % evaluating one "frame" at a time moving from
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:1%length(t_samp)
+for obsIdx = 1:4%length(t_samp)
+    
+    % initialize figure
+figure; 
+set(gcf,'Position',[0207 0346 1527 0420]);
     
     % show particles at start of the estimation frame (state 1)
     subplot(1,3,1);
@@ -210,12 +215,16 @@ for obsIdx = 1:1%length(t_samp)
     plot(Xp(1,:),Xp(2,:),'.','MarkerSize',5,'Color',[.6 .6 1]);
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
     plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
-    plot(data(1,:),data(2,:),'.-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
+%     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfx_2: Angular Velocity [rad/s]');
 
+    % get new truth and observation
+    x_true = x_samp(:,obsIdx);
+    
     % now propigate and update each particle
     x_prior = zeros(2,Np);
+    r = zeros(1,Np);
     w = zeros(1,Np);
     for particleIdx = 1:Np
         
@@ -224,15 +233,18 @@ for obsIdx = 1:1%length(t_samp)
         
         % compute "proposal distribution" by propagating particles forward
         % in time through system model
-        odeTime = [0 dt];
+        odeTime = [0 dt_samp];
         [T,X] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,x_prev,opts);
         x_prior(:,particleIdx) = X(end,:)';
         
         % get observation and compute innovation/residual "r"
-        r = z_samp(obsIdx) - sysParams.l*cos( x_prior(1,particleIdx) );
+        r(particleIdx) = z_samp(obsIdx) - sysParams.l*cos( x_prior(1,particleIdx) );
         
-        % compute partile weight
-        w(particleIdx) = expm(-0.5*r'*inv(SIGMA_v)*r); % using expm even though the argument happens to be a scalar in this case
+        % compute particle weight, using a simple gaussian centered at zero
+        % innovation
+        % could use a different weighting scheme here
+        %%%%% TODO: DO THIS OUTSIDE OF PARTICLE LOOP! %%%%%%%%%
+        w(particleIdx) = expm(-0.5*r(particleIdx)'*inv(COV_v)*r(particleIdx)); % using expm even though the argument happens to be a scalar in this case
         
     end
     
@@ -240,11 +252,46 @@ for obsIdx = 1:1%length(t_samp)
     w = w ./sum(w);
     wCDF = cumsum(w);
     
+    % sample from CDF (uses universality of the uniform distribution to
+    % generate samples)
+    % and assemble posterior
+    resampIdx = arrayfun(@(afin1) find( afin1 <= wCDF,1,'first'), rand(Np,1));
+    x_post = x_prior(:,unique(resampIdx));  % note: unique discards duplicates, thinning the particle ensemble
+    mu = mean(x_post,2);
+    COV = (1/(Np-1))*(x_post-mu)*(x_post-mu)';
+    
     % plot proposal/prior distribution
     subplot(1,3,1);
     plot(x_prior(1,:),x_prior(2,:),'.','MarkerSize',5,'Color',[1 .6 .6]);
+    plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
+    plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
+    mu = mean(x_prior,2);
+    plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
+    plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
+    plot(data(3,:),data(4,:),'-','Color',[0 0 0.5],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+        
+    % plot innovation
+    subplot(1,3,2);
+    hold on; grid on;
+    plot(r,zeros(size(r)),'b.','MarkerSize',5);
+    
+    % functional form of weighting function
+    w_func_domain = -3*sqrt(COV_v):0.0001:3*sqrt(COV_v);
+    w_func = exp(-0.5*inv(COV_v)*(w_func_domain.^2));
+    plot(w_func_domain,w_func,'-');
+    xlabel('\bfInnovation / Residual [m]');
+    ylim([0,2]);
+    
+    % plot posterior distribution
+    subplot(1,3,1);
+    plot(x_post(1,:),x_post(2,:),'k.','MarkerSize',2);
+    mu = mean(x_post,2);
+    plot(mu(1),mu(2),'k*','MarkerSize',10,'LineWidth',3);
+    
+    Xp = x_post; 
+    mu = mean(x_post,2);
+    Np = size(x_post,2);
 end
-
 
 % function to propagate state for ODE solver
 function  Xdot = propDynamicsTruthS(t,X,sysParams)
@@ -285,7 +332,7 @@ theta_dot = X(2);
 
 % construct Xdot from differential equation
 % note:     X    = [theta      theta_dot]
-% therefore Xdot = [theta_dot  theta_ddot] + w_t
+% therefore Xdot = [theta_dot  theta_ddot]
 Xdot = zeros(2,1);
 
 % undamped model propagation
@@ -310,7 +357,7 @@ theta_dot = X(2);
 
 % construct Xdot from differential equation
 % note:     X    = [theta      theta_dot]
-% therefore Xdot = [theta_dot  theta_ddot] + w_t
+% therefore Xdot = [theta_dot  theta_ddot]
 Xdot = zeros(2,1);
 
 % deterministic truth
