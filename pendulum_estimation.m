@@ -209,6 +209,7 @@ for obsIdx = 1:1%length(t_samp)
 
     % now propigate and update each particle
     x_prior = zeros(2,Np);
+    w = zeros(1,Np);
     for particleIdx = 1:Np
         
         % get previous posterior particle set
@@ -220,10 +221,17 @@ for obsIdx = 1:1%length(t_samp)
         [T,X] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,x_prev,opts);
         x_prior(:,particleIdx) = X(end,:)';
         
-        % get observation
+        % get observation and compute innovation/residual "r"
         r = z_samp(obsIdx) - sysParams.l*cos( x_prior(1,particleIdx) );
         
+        % compute partile weight
+        w(particleIdx) = expm(-0.5*r'*inv(SIGMA_v)*r); % using expm even though the argument happens to be a scalar in this case
+        
     end
+    
+    % normalize weights
+    w = w ./sum(w);
+    wCDF = cumsum(w);
     
     % plot proposal/prior distribution
     subplot(1,3,1);
