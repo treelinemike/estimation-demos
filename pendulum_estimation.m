@@ -54,8 +54,15 @@ for t = t0:dt:(tf-dt)
     sysParams.w_t = mvnrnd([0 0]',SIGMA_w_true,1)';
 
     % propagate state
-    [T,X] = ode45(@(t,X) propDynamics(t,X,sysParams),odeTime,X,opts);
-    X = X(end, :)';  % note: this step is necessary to keep state vector dimensions correct for next call to ode45()
+    [T,X1] = ode45(@(t,X) propDynamicsTruthS(t,X,sysParams),odeTime,X(1:2,1),opts);
+    [T,X2] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,X(3:4,1),opts);
+    [T,X3] = ode45(@(t,X) propDynamicsTruthD(t,X,sysParams),odeTime,X(5:6,1),opts);
+    
+    
+    X1 = X1(end, :)';  % note: this step is necessary to keep state vector dimensions correct for next call to ode45()
+    X2 = X2(end, :)';
+    X3 = X3(end, :)';
+    X = [X1;X2;X3];
     
     % store results from this timestep
     time(end+1)   = T(end);
@@ -181,13 +188,14 @@ x_true = data(:,1);
 
 % initialize figure
 figure; 
+set(gcf,'Position',[0207 0346 1527 0420]);
 
 % step through time
 % evaluating one "frame" at a time moving from
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:length(t_samp)
+for obsIdx = 1:1%length(t_samp)
     
     % show particles at start of the estimation frame (state 1)
     subplot(1,3,1);
@@ -200,6 +208,7 @@ for obsIdx = 1:length(t_samp)
     ylabel('\bfx_2: Angular Velocity [rad/s]');
 
     % now propigate and update each particle
+    x_prior = zeros(2,Np);
     for particleIdx = 1:Np
         
         % get previous posterior particle set
@@ -207,16 +216,23 @@ for obsIdx = 1:length(t_samp)
         
         % compute "proposal distribution" by propagating particles forward
         % in time through system model
-        x_prior = 
+        odeTime = [0 dt];
+        [T,X] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,x_prev,opts);
+        x_prior(:,particleIdx) = X(end,:)';
         
+        % get observation
+        r = z_samp(obsIdx) - sysParams.l*cos( x_prior(1,particleIdx) );
         
     end
     
+    % plot proposal/prior distribution
+    subplot(1,3,1);
+    plot(x_prior(1,:),x_prior(2,:),'.','MarkerSize',5,'Color',[1 .6 .6]);
 end
 
 
 % function to propagate state for ODE solver
-function  Xdot = propDynamics(t,X,sysParams)
+function  Xdot = propDynamicsTruthS(t,X,sysParams)
 
 % recover paramters
 m = sysParams.m;
@@ -226,28 +242,63 @@ g = sysParams.g;
 w_t = sysParams.w_t;
 
 % deconstruct state vector
-theta_t = X(1);
-theta_t_dot = X(2);
-theta_m = X(3);
-theta_m_dot = X(4);
-theta_t_det = X(5);
-theta_t_dot_det = X(6);
+theta = X(1);
+theta_dot = X(2);
 
 % construct Xdot from differential equation
-% note:     X    = [theta_t      theta_t_dot   theta_m      theta_m_dot]
-% therefore Xdot = [theta_t_dot  theta_t_ddot  theta_m_dot  theta_m_ddot] + w_t
-Xdot = zeros(6,1);
+% note:     X    = [theta      theta_dot]
+% therefore Xdot = [theta_dot  theta_ddot] + w_t
+Xdot = zeros(2,1);
 
 % stochastic truth
-Xdot(1,:) = theta_t_dot + w_t(1);
-Xdot(2,:) = -(c/(m*l^2))*theta_t_dot-1*(g/l)*sin(theta_t) + w_t(2);
+Xdot(1,:) = theta_dot + w_t(1);
+Xdot(2,:) = -(c/(m*l^2))*theta_dot-1*(g/l)*sin(theta) + w_t(2);
+end
+
+% function to propagate state for ODE solver
+function  Xdot = propDynamicsModel(t,X,sysParams)
+
+% recover paramters
+m = sysParams.m;
+l = sysParams.l;
+c = sysParams.c;
+g = sysParams.g; 
+
+% deconstruct state vector
+theta = X(1);
+theta_dot = X(2);
+
+% construct Xdot from differential equation
+% note:     X    = [theta      theta_dot]
+% therefore Xdot = [theta_dot  theta_ddot] + w_t
+Xdot = zeros(2,1);
 
 % undamped model propagation
 % does not 
-Xdot(3,:) = theta_m_dot;
-Xdot(4,:) = -1*(9.81/(1.1*l))*sin(theta_m);
+Xdot(1,:) = theta_dot;
+Xdot(2,:) = -1*(g/(1.1*l))*sin(theta);
+
+end
+
+% function to propagate state for ODE solver
+function  Xdot = propDynamicsTruthD(t,X,sysParams)
+
+% recover paramters
+m = sysParams.m;
+l = sysParams.l;
+c = sysParams.c;
+g = sysParams.g; 
+
+% deconstruct state vector
+theta = X(1);
+theta_dot = X(2);
+
+% construct Xdot from differential equation
+% note:     X    = [theta      theta_dot]
+% therefore Xdot = [theta_dot  theta_ddot] + w_t
+Xdot = zeros(2,1);
 
 % deterministic truth
-Xdot(5,:) = theta_t_dot_det;
-Xdot(6,:) = -(c/(m*l^2))*theta_t_dot_det-1*(g/l)*sin(theta_t_det);
+Xdot(1,:) = theta_dot;
+Xdot(2,:) = -(c/(m*l^2))*theta_dot-1*(g/l)*sin(theta);
 end
