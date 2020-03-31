@@ -6,7 +6,7 @@ doAnimateSystem = 0;
 
 
 % simulation time parameters
-SIGMA_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+COV_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 t0 = 0;       % [s] simulation start time
 tf = 20;      % [s] simulation end time
 dt = 0.01;     % [s] timestep size
@@ -17,7 +17,7 @@ COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (trut
 
 % estimator options
 Np = 2000;                       % number of particles
-COV_w = [0.02^2 0; 0 0.1^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+COV_w = [0.04^2 0; 0 0.2^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
@@ -26,7 +26,20 @@ sysParams.m = 2;
 sysParams.l = 1;
 sysParams.c = 1;
 sysParams.g = 9.81;
-sysParams.SIGMA_w_true = SIGMA_w_true;
+sysParams.w_t = [0 0]';
+
+% parameters for deterministic system
+sysParamsD = sysParams;
+sysParamsD.w_t = [0 0]'; % just to be explicit
+
+% parameters for deterministic, undamped system
+sysParamsDUD = sysParamsD;
+sysParamsDUD.c = 0;
+
+% parameters for undamped system --- THIS IS THE MODEL ASSUMED IN THE
+% ESTIMATOR
+sysParamsUD = sysParams;
+sysParamsUD.c = 0;
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_t_0     = 25*pi/180;      % [rad]
@@ -55,12 +68,12 @@ for t = t0:dt:(tf-dt)
     % generate state propagation noise
     % want to keep the random draw CONSTANT inside of the ODE45 update
     % function, so draw it here and pass it in
-    sysParams.w_t = mvnrnd([0 0]',SIGMA_w_true,1)';
+    sysParams.w_t = mvnrnd([0 0]',COV_w_true,1)';
 
     % propagate state
-    [T,X1] = ode45(@(t,X) propDynamicsTruthS(t,X,sysParams),odeTime,X(1:2,1),opts);
-    [T,X2] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,X(3:4,1),opts);
-    [T,X3] = ode45(@(t,X) propDynamicsTruthD(t,X,sysParams),odeTime,X(5:6,1),opts);
+    [T,X1] = ode45(@(t,X) propDynamics(t,X,sysParams),odeTime,X(1:2,1),opts);
+    [T,X2] = ode45(@(t,X) propDynamics(t,X,sysParamsDUD),odeTime,X(3:4,1),opts);
+    [T,X3] = ode45(@(t,X) propDynamics(t,X,sysParamsD),odeTime,X(5:6,1),opts);
     
     
     X1 = X1(end, :)';  % note: this step is necessary to keep state vector dimensions correct for next call to ode45()
@@ -203,11 +216,11 @@ x_true = data(:,1);
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:4%length(t_samp)
+for obsIdx = 1:1%length(t_samp)
     
     % initialize figure
-figure; 
-set(gcf,'Position',[0207 0346 1527 0420]);
+    figure;
+    set(gcf,'Position',[0207 0346 1527 0420]);
     
     % show particles at start of the estimation frame (state 1)
     subplot(1,3,1);
@@ -234,11 +247,12 @@ set(gcf,'Position',[0207 0346 1527 0420]);
         % compute "proposal distribution" by propagating particles forward
         % in time through system model
         odeTime = [0 dt_samp];
-        [T,X] = ode45(@(t,X) propDynamicsModel(t,X,sysParams),odeTime,x_prev,opts);
+        sysParamsUD.w_t = mvnrnd([0 0]',COV_w,1)';
+        [T,X] = ode45(@(t,X) propDynamics(t,X,sysParamsUD),odeTime,x_prev,opts);
         x_prior(:,particleIdx) = X(end,:)';
         
         % get observation and compute innovation/residual "r"
-        r(particleIdx) = z_samp(obsIdx) - sysParams.l*cos( x_prior(1,particleIdx) );
+        r(particleIdx) = z_samp(obsIdx) - sysParamsUD.l*cos( x_prior(1,particleIdx) );
         
         % compute particle weight, using a simple gaussian centered at zero
         % innovation
@@ -294,7 +308,7 @@ set(gcf,'Position',[0207 0346 1527 0420]);
 end
 
 % function to propagate state for ODE solver
-function  Xdot = propDynamicsTruthS(t,X,sysParams)
+function  Xdot = propDynamics(t,X,sysParams)
 
 % recover paramters
 m = sysParams.m;
@@ -315,52 +329,4 @@ Xdot = zeros(2,1);
 % stochastic truth
 Xdot(1,:) = theta_dot + w_t(1);
 Xdot(2,:) = -(c/(m*l^2))*theta_dot-1*(g/l)*sin(theta) + w_t(2);
-end
-
-% function to propagate state for ODE solver
-function  Xdot = propDynamicsModel(t,X,sysParams)
-
-% recover paramters
-m = sysParams.m;
-l = sysParams.l;
-c = sysParams.c;
-g = sysParams.g; 
-
-% deconstruct state vector
-theta = X(1);
-theta_dot = X(2);
-
-% construct Xdot from differential equation
-% note:     X    = [theta      theta_dot]
-% therefore Xdot = [theta_dot  theta_ddot]
-Xdot = zeros(2,1);
-
-% undamped model propagation
-% does not 
-Xdot(1,:) = theta_dot;
-Xdot(2,:) = -1*(g/(1.1*l))*sin(theta);
-
-end
-
-% function to propagate state for ODE solver
-function  Xdot = propDynamicsTruthD(t,X,sysParams)
-
-% recover paramters
-m = sysParams.m;
-l = sysParams.l;
-c = sysParams.c;
-g = sysParams.g; 
-
-% deconstruct state vector
-theta = X(1);
-theta_dot = X(2);
-
-% construct Xdot from differential equation
-% note:     X    = [theta      theta_dot]
-% therefore Xdot = [theta_dot  theta_ddot]
-Xdot = zeros(2,1);
-
-% deterministic truth
-Xdot(1,:) = theta_dot;
-Xdot(2,:) = -(c/(m*l^2))*theta_dot-1*(g/l)*sin(theta);
 end
