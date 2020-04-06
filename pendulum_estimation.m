@@ -17,8 +17,8 @@ dt_samp = 0.1;  % observation sampling period
 COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
-Np = 12000;                       % number of particles
-COV_w = [0.04^2 0; 0 0.2^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+Np = 2000;                       % number of particles
+COV_w = [0.04^2 0; 0 0.2^2];      % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
@@ -49,6 +49,7 @@ theta_m_0     = 25*pi/180;      % [rad]
 theta_m_dot_0 = 0;              % [rad/s]
 X0 = [theta_t_0 theta_t_dot_0 theta_m_0 theta_m_dot_0 theta_t_0 theta_t_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 X = X0;
+COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial particles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
 
 % data storage
 time = [t0];
@@ -211,7 +212,7 @@ end
 % first, draw a sample of particles from the initial state
 mu = data(1:2,1);
 COV = COV_w
-Xp = mvnrnd(mu',COV,Np)';
+Xp = mvnrnd(mu',COV_0,Np)';
 x_true = data(:,1);
 
 
@@ -221,7 +222,7 @@ x_true = data(:,1);
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:1%length(t_samp)
+for obsIdx = 1:3%length(t_samp)
     
     % initialize figure
     figure;
@@ -229,6 +230,7 @@ for obsIdx = 1:1%length(t_samp)
     
     % show particles at start of the estimation frame (state 1)
     subplot(2,3,1);
+    title('\bfEvolution in State Space');
     hold on; grid on;
     plot(Xp(1,:),Xp(2,:),'.','MarkerSize',5,'Color',[.6 .6 1]);
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
@@ -288,32 +290,10 @@ for obsIdx = 1:1%length(t_samp)
     % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
     % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
     resampIdx = arrayfun(@(afin1) find( afin1 <= wCDF_all(:,3),1,'first'), rand(Np,1));
-    x_post = x_prior(:,wCDF_all(resampIdx,4));  % note: unique discards duplicates, thinning the particle ensemble
+    x_post = x_prior(:,wCDF_all(resampIdx,4));
+
     
-    figure;
-    hold on; grid on;
-    xlim([0.38,0.44]);
-    wpdf = wCDF_all(:,2)/trapz(wCDF_all(:,1),wCDF_all(:,2));
-    plot(wCDF_all(:,1),wpdf,'r-');
-    plot(wCDF_all(:,1),wCDF_all(:,3)*100,'b');
-    %     plot(wCDF_all(:,1), gradient(wCDF_all(:,3),wCDF_all(:,1)),'m-');
-    plot(wCDF_all(:,1), 100*cumtrapz(wCDF_all(:,1),wpdf),'m-');
     
-    plot(x_post(1,:),zeros(size(x_post)),'m.','MarkerSize',10);
-    x_test = -pi/2:0.0001:pi/2;
-    ppdf = ksdensity(x_post(1,:),x_test,'Kernel','normal');%'epanechnikov');
-    plot(x_test,ppdf,'m-');
-    
-    % try again to sample from this pdf
-    samp2 = zeros(1,Np);
-    for i = 1:length(samp2)
-        samp2(i) = wCDF_all( find( rand <= wCDF_all(:,3), 1, 'first'),1);
-    end
-    plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
-    ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
-    plot(x_test,ppdf2,'c-');
-    
-    error('done');
     mu = mean(x_post,2);
     COV = (1/(Np-1))*(x_post-mu)*(x_post-mu)';
     
@@ -329,6 +309,7 @@ for obsIdx = 1:1%length(t_samp)
     
     % plot innovation
     subplot(2,3,2);
+    title('\bf  Observation');
     hold on; grid on;
     plot(r,zeros(size(r)),'b.','MarkerSize',5);
     
@@ -337,7 +318,7 @@ for obsIdx = 1:1%length(t_samp)
     w_func = exp(-0.5*inv(COV_v)*(w_func_domain.^2));
     plot(w_func_domain,w_func,'-');
     xlabel('\bfInnovation / Residual [m]');
-    ylim([0,2]);
+    ylim([0,1.5 ]);
     
     mu = mean(x_post,2);
     %     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
@@ -368,11 +349,7 @@ for obsIdx = 1:1%length(t_samp)
     plot(x_test,prior_pdf_ks,'r-','LineWidth',1.6);
     plot(x_test,LH_norm,'b-','LineWidth',1.6);
     plot(x_test,post_pdf,'m-','LineWidth',1.6);
-    legend('Truth','Prior (Epanechnikov Kernel)','Normalized Likelihood','Posterior','Location','NorthWest');
-    xlim([-0.5 0.5]);
-    xlabel('\bfx_1: Angular Position [rad]');
-    ylabel('\bfProbability Density');
-    
+
     % test particle propigation using samples
     % need to sort so that trapz() works correctly
     ppdf = [x_prior(1,:)' w'];
@@ -383,6 +360,40 @@ for obsIdx = 1:1%length(t_samp)
     % estimate density from the resampled PDF
     post_rs_ks = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
     plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
+    xlim(x_true(1)+[-0.1 0.1]);
+    
+    
+    legend('Truth','Prior (Epanechnikov Kernel)','Normalized Likelihood','Posterior','PDF from Particle Weights','Smoothed Posterior Particles','Location','NorthWest');
+    xlabel('\bfx_1: Angular Position [rad]');
+    ylabel('\bfProbability Density');
+    
+    
+    
+    subplot(2,3,3);
+    hold on; grid on;
+    xlim(x_true(1)+[-0.05 0.05]);
+    wpdf = wCDF_all(:,2)/trapz(wCDF_all(:,1),wCDF_all(:,2));
+    plot(wCDF_all(:,1),wpdf,'r-');
+    plot(wCDF_all(:,1),wCDF_all(:,3)*100,'b');
+    plot(wCDF_all(:,1), 100*cumtrapz(wCDF_all(:,1),wpdf),'m-');
+    
+    plot(x_post(1,:),zeros(size(x_post)),'m.','MarkerSize',10);
+    x_test = -pi/2:0.0001:pi/2;
+    ppdf = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
+    plot(x_test,ppdf,'m-');
+    
+    % try again to sample from this pdf
+    samp2 = zeros(1,Np);
+    for i = 1:length(samp2)
+        samp2(i) = wCDF_all( find( rand <= wCDF_all(:,3), 1, 'first'),1);
+    end
+    plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
+    ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
+    plot(x_test,ppdf2,'c-');
+    
+%     error('done');
+    
+    
 end
 
 % function to propagate state for ODE solver
