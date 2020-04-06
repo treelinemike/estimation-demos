@@ -3,7 +3,7 @@ close all; clear all; clc;
 
 % general options
 doAnimateSystem = 0;
-
+doShowDynamicsPlots = 0;
 
 % simulation time parameters
 COV_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
@@ -17,13 +17,13 @@ dt_samp = 0.1;  % observation sampling period
 COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
-Np = 2000;                       % number of particles
+Np = 12000;                       % number of particles
 COV_w = [0.04^2 0; 0 0.2^2];   % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
 sysParams = [];
-sysParams.m = 2;   
+sysParams.m = 2;
 sysParams.l = 1;
 sysParams.c = 1;
 sysParams.g = 9.81;
@@ -57,10 +57,10 @@ theta_ddot =  -(sysParams.c/(sysParams.m*sysParams.l^2))*X0(2)-1*(sysParams.g/sy
 
 % reset random number generator using consistant seed
 % although noise is random it will be the same for every run
-rng(2374,'twister');
+% rng(2374,'twister');
 
 % run simulation
-    
+
 for t = t0:dt:(tf-dt)
     
     % calculate timestep for ODE solving
@@ -71,7 +71,7 @@ for t = t0:dt:(tf-dt)
     % want to keep the random draw CONSTANT inside of the ODE45 update
     % function, so draw it here and pass it in
     sysParams.w_t = mvnrnd([0 0]',COV_w_true,1)';
-
+    
     % propagate state
     [T,X1] = ode45(@(t,X) propDynamics(t,X,sysParams),odeTime,X(1:2,1),opts);
     [T,X2] = ode45(@(t,X) propDynamics(t,X,sysParamsDUD),odeTime,X(3:4,1),opts);
@@ -89,78 +89,83 @@ for t = t0:dt:(tf-dt)
     theta_ddot(:,end+1) = -(sysParams.c/(sysParams.m*sysParams.l^2)).*[X(2);X(6)]-1*(sysParams.g/sysParams.l).*sin([X(1);X(5)]);
 end
 
-%%
+%% compute undamped and damped frequencies and time constants
 omega_n = sqrt(sysParams.g/sysParams.l)
 tau_n = 2*pi/omega_n
 c_cr_eq = 2*omega_n;
 zeta = (sysParams.c/(sysParams.m*sysParams.l^2))/c_cr_eq;
 omega_d = omega_n*sqrt(1-zeta^2)
 tau_d = 2*pi/omega_d
+
 %% plot time series for detail trajectory
-ph = [];
-figure;
-set(gcf,'Position',[0345 0188 1275 0505]);
-ax = subplot(2,1,1);
-hold on; grid on;
-plot(time,0*ones(1,length(time)),'k--');
-ph(end+1) = plot(time,data(1,:),'Color',[0 0.7 0],'LineWidth',1.6);
-ph(end+1) = plot(time,data(3,:),'Color',[0.7 0 0],'LineWidth',1.6);
-xlabel('\bfTime [s]');
-ylabel('\bf Angular Position [rad]');
-legend(ph,'Truth','Model');
-xlim([min(time) max(time)]);
+if(doShowDynamicsPlots)
+    ph = [];
+    figure;
+    set(gcf,'Position',[0345 0188 1275 0505]);
+    ax = subplot(2,1,1);
+    hold on; grid on;
+    plot(time,0*ones(1,length(time)),'k--');
+    ph(end+1) = plot(time,data(1,:),'Color',[0 0.7 0],'LineWidth',1.6);
+    ph(end+1) = plot(time,data(3,:),'Color',[0.7 0 0],'LineWidth',1.6);
+    xlabel('\bfTime [s]');
+    ylabel('\bf Angular Position [rad]');
+    legend(ph,'Truth','Model');
+    xlim([min(time) max(time)]);
+end
 
-% now compute measurements of vertical displacement of pendulum tip from
-% center of rotation (observed quantity)
 
-ax(end+1) = subplot(2,1,2);
-hold on; grid on;
+% sample the true signal per measurement model
 z_true = sysParams.l*cos(data(1,:));
-linkaxes(ax,'x');
-
-% sample the true signal
 t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
 z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
 x_samp = interp1(time,data(1:2,:)',t_samp)';
-plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
-plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+
+if(doShowDynamicsPlots)
+    ax(end+1) = subplot(2,1,2);
+    hold on; grid on;
+    plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
+    plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+    linkaxes(ax,'x');
+end
 
 %% show angular position, velocity, and acceleration for the pendulum
 % these are the TRUTH traces
 % one is the deterministic solution
 % the other is the stochastic solution which we will take as acutal truth
 % for the estimator
-figure;
-set(gcf,'Position',[0697 0122 0550 0822]);
-ax2 = subplot(3,1,1);
-hold on; grid on;
-
-plot(time,data(5,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot(time,data(1,:),'b:','LineWidth',1.6);
-legend('Stochastic Truth','Deterministic Evolution')
-title('\bfAngular Position');
-xlabel('\bfTime [s]');
-ylabel('\bf[rad]');
-
-ax2(end+1) = subplot(3,1,2);
-hold on; grid on;
-plot(time,data(6,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot(time,data(2,:),'b:','LineWidth',1.6);
-title('\bfAngular Velocity');
-xlabel('\bfTime [s]');
-ylabel('\bf[rad/s]');
-
-ax2(end+1) = subplot(3,1,3);
-hold on; grid on;
-plot(time,theta_ddot(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot(time,theta_ddot(1,:),'b:','LineWidth',1.6);
-% plot(time,gradient(data(6,:),time),'r--','LineWidth',1.6);  % to check computation of acceleration
-title('\bfAcceleration');
-xlabel('\bfTime [s]');
-ylabel('\bf[rad/s^2]');
-
-linkaxes(ax2,'x');
-xlim([0,max(time)]);
+if(doShowDynamicsPlots)
+    figure;
+    set(gcf,'Position',[0697 0122 0550 0822]);
+    ax2 = subplot(3,1,1);
+    hold on; grid on;
+    
+    plot(time,data(5,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,data(1,:),'b:','LineWidth',1.6);
+    legend('Stochastic Truth','Deterministic Evolution')
+    title('\bfAngular Position');
+    xlabel('\bfTime [s]');
+    ylabel('\bf[rad]');
+    
+    ax2(end+1) = subplot(3,1,2);
+    hold on; grid on;
+    plot(time,data(6,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,data(2,:),'b:','LineWidth',1.6);
+    title('\bfAngular Velocity');
+    xlabel('\bfTime [s]');
+    ylabel('\bf[rad/s]');
+    
+    ax2(end+1) = subplot(3,1,3);
+    hold on; grid on;
+    plot(time,theta_ddot(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,theta_ddot(1,:),'b:','LineWidth',1.6);
+    % plot(time,gradient(data(6,:),time),'r--','LineWidth',1.6);  % to check computation of acceleration
+    title('\bfAcceleration');
+    xlabel('\bfTime [s]');
+    ylabel('\bf[rad/s^2]');
+    
+    linkaxes(ax2,'x');
+    xlim([0,max(time)]);
+end
 
 %% Animate result in a new plot
 if(doAnimateSystem)
@@ -211,7 +216,6 @@ x_true = data(:,1);
 
 
 
-
 % step through time
 % evaluating one "frame" at a time moving from
 % local state 1 (beginning of frame) to local state 2 (end of frame)
@@ -221,18 +225,18 @@ for obsIdx = 1:1%length(t_samp)
     
     % initialize figure
     figure;
-    set(gcf,'Position',[0207 0346 1527 0420]);
+    set(gcf,'Position',[0198 0102 1527 0833]);
     
     % show particles at start of the estimation frame (state 1)
-    subplot(1,3,1);
+    subplot(2,3,1);
     hold on; grid on;
     plot(Xp(1,:),Xp(2,:),'.','MarkerSize',5,'Color',[.6 .6 1]);
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
     plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
-%     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
+    %     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfx_2: Angular Velocity [rad/s]');
-
+    
     % get new truth and observation
     x_true = x_samp(:,obsIdx);
     
@@ -263,34 +267,68 @@ for obsIdx = 1:1%length(t_samp)
         
     end
     
-    xprior_stdev_1 = sqrt(COV(1,1));
+    % compute mean and standard deviation of prior particle set
+    x_prior_mean_1 = mean(x_prior(1,:));
+    x_prior_ctr_1 = x_prior(1,:)-x_prior_mean_1;
+    x_prior_stdev_1 = sqrt( 1/(length(x_prior_ctr_1)-1)*(x_prior_ctr_1*x_prior_ctr_1'));
+    assert( abs(x_prior_stdev_1 - std(x_prior(1,:)))/std(x_prior(1,:)) < 0.01 , 'Standard deviation calculation not within 1%!');
     
-    % normalize weights
+    
     w = w ./sum(w);
-    wCDF = cumsum(w);
+    wCDF_all = [x_prior(1,:)',w',w',(1:Np)'];
+    wCDF_all = sortrows(wCDF_all,1,'ascend');
+    wCDF_all(:,3) = cumsum(wCDF_all(:,2));
     
-    % sample from CDF (uses universality of the uniform distribution to
-    % generate samples)
+    %     % normalize weights to sum to 1.0
+    %     w = w ./sum(w);
+    %     wCDF = cumsum(w);
+    
+    % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
     % and assemble posterior
-    resampIdx = arrayfun(@(afin1) find( afin1 <= wCDF,1,'first'), rand(Np,1));
-    x_post = x_prior(:,unique(resampIdx));  % note: unique discards duplicates, thinning the particle ensemble
+    % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
+    % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
+    resampIdx = arrayfun(@(afin1) find( afin1 <= wCDF_all(:,3),1,'first'), rand(Np,1));
+    x_post = x_prior(:,wCDF_all(resampIdx,4));  % note: unique discards duplicates, thinning the particle ensemble
+    
+    figure;
+    hold on; grid on;
+    xlim([0.38,0.44]);
+    wpdf = wCDF_all(:,2)/trapz(wCDF_all(:,1),wCDF_all(:,2));
+    plot(wCDF_all(:,1),wpdf,'r-');
+    plot(wCDF_all(:,1),wCDF_all(:,3)*100,'b');
+    %     plot(wCDF_all(:,1), gradient(wCDF_all(:,3),wCDF_all(:,1)),'m-');
+    plot(wCDF_all(:,1), 100*cumtrapz(wCDF_all(:,1),wpdf),'m-');
+    
+    plot(x_post(1,:),zeros(size(x_post)),'m.','MarkerSize',10);
+    x_test = -pi/2:0.0001:pi/2;
+    ppdf = ksdensity(x_post(1,:),x_test,'Kernel','normal');%'epanechnikov');
+    plot(x_test,ppdf,'m-');
+    
+    % try again to sample from this pdf
+    samp2 = zeros(1,Np);
+    for i = 1:length(samp2)
+        samp2(i) = wCDF_all( find( rand <= wCDF_all(:,3), 1, 'first'),1);
+    end
+    plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
+    ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
+    plot(x_test,ppdf2,'c-');
+    
+    error('done');
     mu = mean(x_post,2);
     COV = (1/(Np-1))*(x_post-mu)*(x_post-mu)';
     
     % plot proposal/prior distribution
-    subplot(1,3,1);
+    subplot(2,3,1);
     plot(x_prior(1,:),x_prior(2,:),'.','MarkerSize',5,'Color',[1 .6 .6]);
     plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
     plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
-    mu = mean(x_prior,2);
-    x_prior_mean_1 = mu(1);
     fprintf('Prior: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(obsIdx));
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
     plot(data(3,:),data(4,:),'-','Color',[0 0 0.5],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
-        
+    
     % plot innovation
-    subplot(1,3,2);
+    subplot(2,3,2);
     hold on; grid on;
     plot(r,zeros(size(r)),'b.','MarkerSize',5);
     
@@ -302,48 +340,49 @@ for obsIdx = 1:1%length(t_samp)
     ylim([0,2]);
     
     mu = mean(x_post,2);
-%     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
+    %     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
     Xp = x_post;
     Np = size(x_post,2);
     
     
     % plot posterior distribution after resampling
-    subplot(1,3,1);
+    subplot(2,3,1);
     plot(x_post(1,:),x_post(2,:),'k.','MarkerSize',2);
     mu = mean(x_post,2);
     plot(mu(1),mu(2),'k*','MarkerSize',10,'LineWidth',3);
     
     % show bayesian update in 1D
-    figure;
-    set(gcf,'Position',[0207 0558 1655 0420]);
+    subplot(2,3,4:6);
     x_test = -pi/2:0.0001:pi/2;
     LH = zeros(size(x_test));  % likelihood function
     for xIdx = 1:length(x_test)
         LH(xIdx) = normpdf( z_samp(obsIdx) , sysParams.l*cos( x_test(xIdx) ), sqrt(COV_v)  );
     end
     hold on; grid on;
-    prior_pdf = normpdf( x_test, x_prior_mean_1, xprior_stdev_1 );
+    %     prior_pdf = normpdf( x_test, x_prior_mean_1, x_prior_stdev_1 );
+    prior_pdf_ks = ksdensity(x_prior(1,:),x_test,'Kernel','epanechnikov');
     LH_norm = LH/trapz(x_test,LH);
-    post_pdf = prior_pdf .* LH;
+    post_pdf = prior_pdf_ks .* LH;
     post_pdf = post_pdf / trapz(x_test,post_pdf);
-    plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(x_test,prior_pdf,'r-','LineWidth',1.6);
+    plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(x_test,prior_pdf_ks,'r-','LineWidth',1.6);
     plot(x_test,LH_norm,'b-','LineWidth',1.6);
     plot(x_test,post_pdf,'m-','LineWidth',1.6);
-    legend('Truth','Prior (Assumed Gaussian)','Normalized Likelihood','Posterior','Location','NorthWest');
+    legend('Truth','Prior (Epanechnikov Kernel)','Normalized Likelihood','Posterior','Location','NorthWest');
     xlim([-0.5 0.5]);
-end
-
-% follow Simon pg. 473-474 to use the Epanechnikov kernel to smooth our
-% particle estimate
-% inputs:
-%   x_part = n x m matrix; n = # states; m = # particles
-function part2pdf( x_part, x_test)
-
-    N = size(x_part,1);
-    mu = (1/N)*sum(x_part,2);   % alternativly: mean(x_part,2)
-    x_part_ctr = x_part - mu;
-    S  = (1/(N-1))*(x_part_ctr)*(x_part_ctr)';
+    xlabel('\bfx_1: Angular Position [rad]');
+    ylabel('\bfProbability Density');
+    
+    % test particle propigation using samples
+    % need to sort so that trapz() works correctly
+    ppdf = [x_prior(1,:)' w'];
+    ppdf = sortrows(ppdf,1,'ascend');
+    ppdf(:,2) = ppdf(:,2)/trapz(ppdf(:,1),ppdf(:,2));
+    plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
+    
+    % estimate density from the resampled PDF
+    post_rs_ks = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
+    plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
 end
 
 % function to propagate state for ODE solver
@@ -353,7 +392,7 @@ function  Xdot = propDynamics(t,X,sysParams)
 m = sysParams.m;
 l = sysParams.l;
 c = sysParams.c;
-g = sysParams.g; 
+g = sysParams.g;
 w_t = sysParams.w_t;
 
 % deconstruct state vector
