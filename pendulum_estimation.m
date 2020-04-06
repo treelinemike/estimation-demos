@@ -13,6 +13,7 @@ dt = 0.01;     % [s] timestep size
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % sampling options
+dt_samp = 0.1;  % observation sampling period
 COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
@@ -59,6 +60,7 @@ theta_ddot =  -(sysParams.c/(sysParams.m*sysParams.l^2))*X0(2)-1*(sysParams.g/sy
 rng(2374,'twister');
 
 % run simulation
+    
 for t = t0:dt:(tf-dt)
     
     % calculate timestep for ODE solving
@@ -117,7 +119,6 @@ z_true = sysParams.l*cos(data(1,:));
 linkaxes(ax,'x');
 
 % sample the true signal
-dt_samp = 0.25;  % observation sampling period
 t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
 z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
 x_samp = interp1(time,data(1:2,:)',t_samp)';
@@ -262,6 +263,8 @@ for obsIdx = 1:1%length(t_samp)
         
     end
     
+    xprior_stdev_1 = sqrt(COV(1,1));
+    
     % normalize weights
     w = w ./sum(w);
     wCDF = cumsum(w);
@@ -280,6 +283,8 @@ for obsIdx = 1:1%length(t_samp)
     plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
     plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
     mu = mean(x_prior,2);
+    x_prior_mean_1 = mu(1);
+    fprintf('Prior: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(obsIdx));
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
     plot(data(3,:),data(4,:),'-','Color',[0 0 0.5],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
@@ -296,15 +301,49 @@ for obsIdx = 1:1%length(t_samp)
     xlabel('\bfInnovation / Residual [m]');
     ylim([0,2]);
     
-    % plot posterior distribution
+    mu = mean(x_post,2);
+%     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
+    Xp = x_post;
+    Np = size(x_post,2);
+    
+    
+    % plot posterior distribution after resampling
     subplot(1,3,1);
     plot(x_post(1,:),x_post(2,:),'k.','MarkerSize',2);
     mu = mean(x_post,2);
     plot(mu(1),mu(2),'k*','MarkerSize',10,'LineWidth',3);
     
-    Xp = x_post; 
-    mu = mean(x_post,2);
-    Np = size(x_post,2);
+    % show bayesian update in 1D
+    figure;
+    set(gcf,'Position',[0207 0558 1655 0420]);
+    x_test = -pi/2:0.0001:pi/2;
+    LH = zeros(size(x_test));  % likelihood function
+    for xIdx = 1:length(x_test)
+        LH(xIdx) = normpdf( z_samp(obsIdx) , sysParams.l*cos( x_test(xIdx) ), sqrt(COV_v)  );
+    end
+    hold on; grid on;
+    prior_pdf = normpdf( x_test, x_prior_mean_1, xprior_stdev_1 );
+    LH_norm = LH/trapz(x_test,LH);
+    post_pdf = prior_pdf .* LH;
+    post_pdf = post_pdf / trapz(x_test,post_pdf);
+    plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(x_test,prior_pdf,'r-','LineWidth',1.6);
+    plot(x_test,LH_norm,'b-','LineWidth',1.6);
+    plot(x_test,post_pdf,'m-','LineWidth',1.6);
+    legend('Truth','Prior (Assumed Gaussian)','Normalized Likelihood','Posterior','Location','NorthWest');
+    xlim([-0.5 0.5]);
+end
+
+% follow Simon pg. 473-474 to use the Epanechnikov kernel to smooth our
+% particle estimate
+% inputs:
+%   x_part = n x m matrix; n = # states; m = # particles
+function part2pdf( x_part, x_test)
+
+    N = size(x_part,1);
+    mu = (1/N)*sum(x_part,2);   % alternativly: mean(x_part,2)
+    x_part_ctr = x_part - mu;
+    S  = (1/(N-1))*(x_part_ctr)*(x_part_ctr)';
 end
 
 % function to propagate state for ODE solver
@@ -328,5 +367,5 @@ Xdot = zeros(2,1);
 
 % stochastic truth
 Xdot(1,:) = theta_dot + w_t(1);
-Xdot(2,:) = -(c/(m*l^2))*theta_dot-1*(g/l)*sin(theta) + w_t(2);
+Xdot(2,:) = -(c/(m*l^2))*theta_dot -(g/l)*sin(theta) + w_t(2);
 end
