@@ -13,7 +13,7 @@ mu_h = 5;
 sigma_h = 0.5;
 
 % sample size
-N = 50000;
+N = 500;
 
 % constant factor
 M = 30; 

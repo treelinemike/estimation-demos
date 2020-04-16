@@ -16,9 +16,9 @@ sigma_g = 1;
 mu_h = 5;
 sigma_h = 0.5;
 
-% sample sizes
-N_g = 1000;   % number of samples of g(x)
-N_rs = 1000;  % number of points to resample
+% sample size
+% following proof in paper both original sample and resampled set have same size
+N = 500;
 
 % domain
 x = -1:0.001:8;
@@ -29,7 +29,7 @@ h = (1/(sigma_h*sqrt(2*pi)))*exp(-0.5*((x-mu_h)/sigma_h).^2);  % note: f(x) is N
 f = exp(-0.5*((x-mu_h)/sigma_h).^2);  % note: f(x) is NOT normalized...
 
 % sample from g(x)
-samp_g = mu_g + randn(N_g,1)*sigma_g;
+samp_g = mu_g + randn(N,1)*sigma_g;
 
 % smooth sample from g(x)
 g_ks = ksdensity(samp_g,x,'Kernel','normal');%'Epanechnikov');
@@ -42,7 +42,7 @@ end
 
 % compute weights
 if(doUseStandardBootstrap)
-    q = 1/N_g*ones(1,N_g);  % standard bootstrap uses a uniform PMF
+    q = (1/N)*ones(1,N);  % standard bootstrap uses a uniform PMF
 else
     w = f(samp_g_idx)./g(samp_g_idx); % weight each sample by the ratio of f(x)/g(x) at the appropriate x
     q = w/sum(w); % this is now a PMF (not a PDF)
@@ -50,7 +50,7 @@ end
 q_cdf = cumsum(q); % the samp_g_idx vector maps these particles back to the samples of g
 
 % resample using inverse transform sampling (i.e. universaility of the uniform)
-u = rand(N_rs,1);
+u = rand(N,1);
 rs_sampnums = arrayfun(@(x) find(q_cdf >= x,1,'first'),u);  % sampled particle numbers, not indexed to samples of g(x)
 resamp_x = x(samp_g_idx( rs_sampnums ));
 resamp_ks = ksdensity(resamp_x,x); %,'Kernel','Epanechnikov');
@@ -64,8 +64,8 @@ plot(x,g,'-','Color',[0.8 0 0],'LineWidth',1.6);
 plot(x,f,'-','Color',[0 0.8 0],'LineWidth',1.6);
 plot(x,h,'--','Color',[0 0.8 0],'LineWidth',1.6);
 plot(x,resamp_ks,'-','Color',[0 0 0.8],'LineWidth',1.6);
-plot(x(samp_g_idx),zeros(1,N_g),'.','Color',[0.8 0 0],'MarkerSize',10);
-plot(resamp_x,zeros(1,N_rs),'o','Color',[0 0 0.8],'MarkerSize',5);
+plot(x(samp_g_idx),zeros(1,N),'.','Color',[0.8 0 0],'MarkerSize',10);
+plot(resamp_x,zeros(1,N),'o','Color',[0 0 0.8],'MarkerSize',5);
 legend('g(x)','f(x)','h(x)','Resample PDF','g(x) Samples','Resample','Location','NorthWest');
 xlim([-1 8]);
 title('\bfWeighted Bootstrap');
