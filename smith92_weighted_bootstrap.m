@@ -32,7 +32,7 @@ f = exp(-0.5*((x-mu_h)/sigma_h).^2);  % note: f(x) is NOT normalized...
 samp_g = mu_g + randn(N,1)*sigma_g;
 
 % smooth sample from g(x)
-g_ks = ksdensity(samp_g,x,'Kernel','normal');%'Epanechnikov');
+% g_ks = ksdensity(samp_g,x,'Kernel','normal');%'Epanechnikov');
 
 % find indices of samples in the x vector
 samp_g_idx = arrayfun(@(thisSamp) find(x >= thisSamp,1,'first'),samp_g); 
