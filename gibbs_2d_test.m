@@ -8,7 +8,7 @@ close all; clear; clc;
 rng('default');
 
 % options
-Nsteps = 100;
+Nsteps = 20;
 doShowSteps = 0;
 doAnimate = 0;
 
@@ -20,8 +20,8 @@ corr = 0.8;
 cov_true = [sigma_1^2 corr*sigma_1*sigma_2; corr*sigma_1*sigma_2 sigma_2^2];
 
 % state space to explore (i.e. query points)
-xq_vec{1} = (-3:0.1:7)';
-xq_vec{2} = (-4:0.1:13)';
+xq_vec{1} = (-4:0.1:8)';
+xq_vec{2} = (-4:0.1:14)';
 
 % generate PDF at query points
 [X1Q,X2Q] = meshgrid(xq_vec{1},xq_vec{2});
