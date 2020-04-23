@@ -7,7 +7,7 @@ close all; clear; clc;
 rng('default');
 
 % options
-Nsteps = 200;
+Nsteps = 100;
 doShowSteps = 0;
 
 % true PDF parameters
@@ -29,7 +29,8 @@ PDF = reshape(PQ,size(X1Q));
 
 % plot true PDF
 figure(1);
-set(gcf,'Position',[0821 0195 0419 0783]);
+% set(gcf,'Position',[0821 0195 0419 0783]);
+set(gcf,'Position',[0488 1.562000e+02 3.642000e+02 6.058000e+02]);
 hold on; grid on;
 axis equal;
 contour(X1Q,X2Q,PDF);
