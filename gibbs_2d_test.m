@@ -8,25 +8,25 @@ close all; clear; clc;
 rng('default');
 
 % options
-Nsteps = 20;
+Nsteps = 50;
 doShowSteps = 0;
-doAnimate = 0;
+doAnimate = 1;
 
 % true PDF parameters
-mu_true = [2 5];
+mu_true = [2 5]';
 sigma_1 = 2;
 sigma_2 = 4;
 corr = 0.8;
 cov_true = [sigma_1^2 corr*sigma_1*sigma_2; corr*sigma_1*sigma_2 sigma_2^2];
 
 % state space to explore (i.e. query points)
-xq_vec{1} = (-4:0.1:8)';
-xq_vec{2} = (-4:0.1:14)';
+xq_vec{1} = -4:0.1:8;
+xq_vec{2} = -4:0.1:14;
 
 % generate PDF at query points
 [X1Q,X2Q] = meshgrid(xq_vec{1},xq_vec{2});
 XQ = [X1Q(:) X2Q(:)];
-[PQ] = mvnpdf(XQ,mu_true,cov_true);
+[PQ] = mvnpdf(XQ,mu_true',cov_true);
 PDF = reshape(PQ,size(X1Q));
 
 % plot true PDF
@@ -55,18 +55,18 @@ for gibbsIter = 1:Nsteps
     for dimIdx = 1:length(mu_true)
         
         % reset storage
-        gibbsXQ = repmat(x',length(xq_vec{dimIdx}),1);
-        gibbsXQ(:,dimIdx) = xq_vec{dimIdx};
+        gibbsXQ = repmat(x,1,length(xq_vec{dimIdx}));
+        gibbsXQ(dimIdx,:) = xq_vec{dimIdx};
         
         % slice PDF along this dimension at the current point
-        gibbsPQ = mvnpdf(gibbsXQ,mu_true,cov_true);
-        gibbsPQ = gibbsPQ/trapz(gibbsXQ(:,dimIdx),gibbsPQ);
+        gibbsPQ = mvnpdf(gibbsXQ',mu_true',cov_true)';
+        gibbsPQ = gibbsPQ/trapz(gibbsXQ(dimIdx,:),gibbsPQ);
         
         % compute CDF and sample from it using inverse transform sampling
-        gibbsCDF = cumtrapz(gibbsXQ(:,dimIdx),gibbsPQ);
-        gibbsPt = gibbsXQ( arrayfun( @(x) find(x <= gibbsCDF,1,'first') , rand(1,1)) ,dimIdx);
+        gibbsCDF = cumtrapz(gibbsXQ(dimIdx,:),gibbsPQ);
+        gibbsPt = gibbsXQ( dimIdx, arrayfun( @(x) find(x <= gibbsCDF,1,'first') , rand(1,1)) );
         x(dimIdx) = gibbsPt;
-        gibbsSamp = gibbsXQ( arrayfun( @(x) find(x <= gibbsCDF,1,'first') , rand(1,100)) ,dimIdx);  % for illustration only
+        gibbsSamp = gibbsXQ( dimIdx, arrayfun( @(x) find(x <= gibbsCDF,1,'first') , rand(1,100)) );  % for illustration only
         
         % plot results of stepping along this dimension if requested
         if(doShowSteps)
