@@ -5,7 +5,7 @@
 %   x_test: points in state space to evaluate PDF (each column is a different point, number of rows = dimension of state space)
 % output: 
 %   ks_pdf: estimated value of the PDF for each point in x_test
-function ks_pdf = part2pdf( x_part, q_part, x_test)
+function ks_pdf = part2pdf( x_part, q_part, x_test, bwScaleFactor)
 
     Ns = size(x_part,1);         % dimension of state space
     Np = size(x_part,2);         % number of particles
@@ -29,9 +29,9 @@ function ks_pdf = part2pdf( x_part, q_part, x_test)
     vn = v(Ns);
     
     % compute optimal bandwidth
-    % Note: eliminatng the 0.5 factor from Simon to closely approximate
-    % MATLAB result
-    h = 2*0.5 * ((8*(1/vn)*(Ns+4)*(2*sqrt(pi))^Ns )^(1/(Ns+4)))* ((Np)^(-1/(Ns+4)));
+    % Note: eliminatng the 0.5 factor from Simon (i.e. setting bwScaleFactor = 2) will closely approximate
+    % MATLAB result; however, Simon argues taht the 0.5 
+    h = bwScaleFactor*0.5 * ((8*(1/vn)*(Ns+4)*(2*sqrt(pi))^Ns )^(1/(Ns+4)))* ((Np)^(-1/(Ns+4)));
 %     fprintf('Simon BW: %8.6f\n',h);
     
     % initialize PDF

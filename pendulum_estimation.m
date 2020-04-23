@@ -3,7 +3,7 @@ close all; clear all; clc;
 
 % general options
 doAnimateSystem = 0;
-doShowDynamicsPlots = 0;
+doShowDynamicsPlots = 1;
 
 % simulation time parameters
 COV_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
@@ -59,6 +59,8 @@ theta_ddot =  -(sysParams.c/(sysParams.m*sysParams.l^2))*X0(2)-1*(sysParams.g/sy
 % reset random number generator using consistant seed
 % although noise is random it will be the same for every run
 % rng(2374,'twister');
+% rng(4265,'twister');    
+rng(111,'twister');   
 
 % run simulation
 
@@ -275,15 +277,13 @@ for obsIdx = 1:3%length(t_samp)
     x_prior_stdev_1 = sqrt( 1/(length(x_prior_ctr_1)-1)*(x_prior_ctr_1*x_prior_ctr_1'));
     assert( abs(x_prior_stdev_1 - std(x_prior(1,:)))/std(x_prior(1,:)) < 0.01 , 'Standard deviation calculation not within 1%!');
     
-    
+    % normalize weights to sum to 1.0
     w = w ./sum(w);
+    
+    % compute "CDF" in column 3
     wCDF_all = [x_prior(1,:)',w',w',(1:Np)'];
     wCDF_all = sortrows(wCDF_all,1,'ascend');
     wCDF_all(:,3) = cumsum(wCDF_all(:,2));
-    
-    %     % normalize weights to sum to 1.0
-    %     w = w ./sum(w);
-    %     wCDF = cumsum(w);
     
     % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
     % and assemble posterior
@@ -345,21 +345,24 @@ for obsIdx = 1:3%length(t_samp)
     LH_norm = LH/trapz(x_test,LH);
     post_pdf = prior_pdf_ks .* LH;
     post_pdf = post_pdf / trapz(x_test,post_pdf);
-    plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(x_test,prior_pdf_ks,'r-','LineWidth',1.6);
-    plot(x_test,LH_norm,'b-','LineWidth',1.6);
-    plot(x_test,post_pdf,'m-','LineWidth',1.6);
+%     plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(x_test,prior_pdf_ks,'r-','LineWidth',3.6);
+    plot(x_test,LH_norm,'b-','LineWidth',3.6);
+%     plot(x_test,post_pdf_est,'m-','LineWidth',1.6);
+    post_pdf_est = prior_pdf_ks.*LH_norm;
+    post_pdf_est = post_pdf_est / trapz(x_test,post_pdf_est);
+    plot(x_test,post_pdf_est,'m-','LineWidth',3.6);
 
     % test particle propigation using samples
     % need to sort so that trapz() works correctly
     ppdf = [x_prior(1,:)' w'];
     ppdf = sortrows(ppdf,1,'ascend');
     ppdf(:,2) = ppdf(:,2)/trapz(ppdf(:,1),ppdf(:,2));
-    plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
+%     plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
     
     % estimate density from the resampled PDF
     post_rs_ks = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
-    plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
+%     plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
     xlim(x_true(1)+[-0.1 0.1]);
     
     
@@ -373,9 +376,10 @@ for obsIdx = 1:3%length(t_samp)
     hold on; grid on;
     xlim(x_true(1)+[-0.05 0.05]);
     wpdf = wCDF_all(:,2)/trapz(wCDF_all(:,1),wCDF_all(:,2));
+    intCDF = cumtrapz(wCDF_all(:,1),wpdf);
     plot(wCDF_all(:,1),wpdf,'r-');
-    plot(wCDF_all(:,1),wCDF_all(:,3)*100,'b');
-    plot(wCDF_all(:,1), 100*cumtrapz(wCDF_all(:,1),wpdf),'m-');
+    plot(wCDF_all(:,1),100*wCDF_all(:,3),'b');   
+    plot(wCDF_all(:,1), 100*intCDF,'m-');
     
     plot(x_post(1,:),zeros(size(x_post)),'m.','MarkerSize',10);
     x_test = -pi/2:0.0001:pi/2;
@@ -389,7 +393,7 @@ for obsIdx = 1:3%length(t_samp)
     end
     plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
     ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
-    plot(x_test,ppdf2,'c-');
+    plot(x_test,ppdf2,'C-');
     
 %     error('done');
     
