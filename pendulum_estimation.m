@@ -13,12 +13,12 @@ dt = 0.01;     % [s] timestep size
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % sampling options
-dt_samp = 0.1;  % observation sampling period
+dt_samp = 0.5;  % observation sampling period
 COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
 Np = 2000;                       % number of particles
-COV_w = [0.04^2 0; 0 0.2^2];      % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+COV_w = [0.04^2 0; 0 0.2^2];     % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
