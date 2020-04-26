@@ -1,24 +1,34 @@
 % restart
 close all; clear all; clc;
 
+% reset random number generator using consistant seed
+% although noise is random it will be the same for every run
+% rng(2374,'twister');
+rng(4265,'twister');    
+% rng(111,'twister');   
+
 % general options
 doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 
 % simulation time parameters
-COV_w_true = [1^2 0; 0 0.00^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
-t0 = 0;       % [s] simulation start time
-tf = 20;      % [s] simulation end time
-dt = 0.01;     % [s] timestep size
-opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
+t0 = 0;        % [s] simulation start time
+tf = 20;       % [s] simulation end time
+dt = 0.001;    % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
-dt_samp = 0.5;  % observation sampling period
-COV_v = (0.002)^2;    % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
+dt_samp = 0.05;      % observation sampling period
+COV_v = (0.002)^2;  % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
 
 % estimator options
-Np = 2000;                       % number of particles
-COV_w = [0.04^2 0; 0 0.2^2];     % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+Np = 2000;                                  % number of particles
+COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+COV_w = [0.04^2 0; 0 0.2^2];                % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+
+% initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
+theta_0     = 25*pi/180;      % [rad]
+theta_dot_0 = 0;              % [rad/s]
+x0 = [theta_0 theta_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
@@ -27,78 +37,44 @@ sysParams.m = 2;
 sysParams.l = 1;
 sysParams.c = 1;
 sysParams.g = 9.81;
-sysParams.w_t = [0 0]';
+sysParams.COV_w_true = [0.0002^2 0; 0 0.0003^2];
 
-% parameters for deterministic system
-sysParamsD = sysParams;
-sysParamsD.w_t = [0 0]'; % just to be explicit
+% SD: parameters for Stochastic, Damped system
+% this is the "true" signal
+sysParamsSD = sysParams;
 
-% parameters for deterministic, undamped system
-sysParamsDUD = sysParamsD;
-sysParamsDUD.c = 0;
+% DD: parameters for Deterministic, Damped system
+% used for comparison to the "true" signal, highlighting stochastic effects
+sysParamsDD = sysParams;
+sysParamsDD.COV_w_true = zeros(2,2);
 
-% parameters for undamped system --- THIS IS THE MODEL ASSUMED IN THE
-% ESTIMATOR
-sysParamsUD = sysParams;
-sysParamsUD.c = 0;
+% DU: parameters for Deterministic, Undamped system
+% this is how a naive model would propagate system trajectory
+sysParamsDU = sysParams;
+sysParamsDU.c = 0;
+sysParamsDU.COV_w_true = zeros(2,2);
 
-% initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
-theta_t_0     = 25*pi/180;      % [rad]
-theta_t_dot_0 = 0;              % [rad/s]
-theta_m_0     = 25*pi/180;      % [rad]
-theta_m_dot_0 = 0;              % [rad/s]
-X0 = [theta_t_0 theta_t_dot_0 theta_m_0 theta_m_dot_0 theta_t_0 theta_t_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
-X = X0;
-COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+% SU: parameters for Stochastic, Undamped system
+% THIS IS THE MODEL ASSUMED IN / USED BY THE ESTIMATOR
+sysParamsSU = sysParams;
+sysParamsSU.c = 0;
 
-% data storage
-time = [t0];
-data = [X0];
-theta_ddot =  -(sysParams.c/(sysParams.m*sysParams.l^2))*X0(2)-1*(sysParams.g/sysParams.l)*sin(X0(1))*ones(2,1);
+% compute number of steps to take for discrete system
+% and assemble time vector
+Nsteps = ceil(tf/dt);
+time = (0:Nsteps)*dt;
 
-% reset random number generator using consistant seed
-% although noise is random it will be the same for every run
-% rng(2374,'twister');
-% rng(4265,'twister');    
-rng(111,'twister');   
+% run discrete simulations (note: nonlinear state transition function called! error ~ O(dt) )
+x_SD = stepDynamics(Nsteps,dt,x0,sysParamsSD);
+x_DD = stepDynamics(Nsteps,dt,x0,sysParamsDD);
+x_DU = stepDynamics(Nsteps,dt,x0,sysParamsDU);
+x_SU = stepDynamics(Nsteps,dt,x0,sysParamsSU);
 
-% run simulation
-
-for t = t0:dt:(tf-dt)
-    
-    % calculate timestep for ODE solving
-    odeTime = [t t+dt];
-    
-    % generate the random noise for this timestep
-    % generate state propagation noise
-    % want to keep the random draw CONSTANT inside of the ODE45 update
-    % function, so draw it here and pass it in
-    sysParams.w_t = mvnrnd([0 0]',COV_w_true,1)';
-    
-    % propagate state
-    [T,X1] = ode45(@(t,X) propDynamics(t,X,sysParams),odeTime,X(1:2,1),opts);
-    [T,X2] = ode45(@(t,X) propDynamics(t,X,sysParamsDUD),odeTime,X(3:4,1),opts);
-    [T,X3] = ode45(@(t,X) propDynamics(t,X,sysParamsD),odeTime,X(5:6,1),opts);
-    
-    
-    X1 = X1(end, :)';  % note: this step is necessary to keep state vector dimensions correct for next call to ode45()
-    X2 = X2(end, :)';
-    X3 = X3(end, :)';
-    X = [X1;X2;X3];
-    
-    % store results from this timestep
-    time(end+1)   = T(end);
-    data(:,end+1) = X; % note: discarding state values at intermediate timesteps calculated by ode45()
-    theta_ddot(:,end+1) = -(sysParams.c/(sysParams.m*sysParams.l^2)).*[X(2);X(6)]-1*(sysParams.g/sysParams.l).*sin([X(1);X(5)]) + [sysParams.w_t(2);0];
-end
-
-%% compute undamped and damped frequencies and time constants
-omega_n = sqrt(sysParams.g/sysParams.l)
-tau_n = 2*pi/omega_n
-c_cr_eq = 2*omega_n;
-zeta = (sysParams.c/(sysParams.m*sysParams.l^2))/c_cr_eq;
-omega_d = omega_n*sqrt(1-zeta^2)
-tau_d = 2*pi/omega_d
+% sample the true signal per measurement model
+z_true = sysParams.l*cos(x_SD(1,:));
+t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
+z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
+x_samp = interp1(time,x_SD',t_samp)';
 
 %% plot time series trajectories
 if(doShowDynamicsPlots)
@@ -108,26 +84,19 @@ if(doShowDynamicsPlots)
     ax = subplot(2,1,1);
     hold on; grid on;
     plot(time,0*ones(1,length(time)),'k--');
-    ph(end+1) = plot(time,data(1,:),'Color',[0 0.7 0],'LineWidth',1.6);
-    ph(end+1) = plot(time,data(3,:),'Color',[0.7 0 0],'LineWidth',1.6);
+    ph(end+1) = plot(time,x_DU(1,:),'Color',[0.8 0 0],'LineWidth',1.6);
+    ph(end+1) = plot(time,x_SD(1,:),'Color',[0 0 0.8],'LineWidth',1.6);
     xlabel('\bfTime [s]');
     ylabel('\bf Angular Position [rad]');
-    legend(ph,'Truth','Model');
+    legend(ph,'Naive Model','Truth','Location','SouthEast');
     xlim([min(time) max(time)]);
-end
 
-
-% sample the true signal per measurement model
-z_true = sysParams.l*cos(data(1,:));
-t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
-z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
-x_samp = interp1(time,data(1:2,:)',t_samp)';
-
-if(doShowDynamicsPlots)
     ax(end+1) = subplot(2,1,2);
     hold on; grid on;
-    plot(time,z_true,'Color',[0 0.7 0],'LineWidth',1.6);
+    plot(time,z_true,'Color',[0 0 0.8],'LineWidth',1.6);
     plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+    ylabel('\bfObservation');
+    legend('Truth','Samples','Location','SouthEast');
     linkaxes(ax,'x');
 end
 
@@ -141,26 +110,26 @@ if(doShowDynamicsPlots)
     set(gcf,'Position',[0697 0122 0550 0822]);
     ax2 = subplot(3,1,1);
     hold on; grid on;
-  
-    plot(time,data(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,data(5,:),'b:','LineWidth',1.6);
-    legend('Stochastic Truth','Deterministic Evolution');
+    plot(time,x_DU(1,:),'-','LineWidth',1.6,'Color',[0.8 0 0]);
+    plot(time,x_DD(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,x_SD(1,:),'-','LineWidth',1.0,'Color',[0 0 0.8]);
+    legend('Deterministic Undamped','Deterministic Damped','Stochastic "Truth"');
     title('\bfAngular Position');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad]');
     
     ax2(end+1) = subplot(3,1,2);
     hold on; grid on;
-    plot(time,data(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,data(6,:),'b:','LineWidth',1.6);
+    plot(time,x_DD(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,x_SD(2,:),'-','LineWidth',1.0,'Color',[0 0 0.8]);
     title('\bfAngular Velocity');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad/s]');
     
     ax2(end+1) = subplot(3,1,3);
     hold on; grid on;
-    plot(time,theta_ddot(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,theta_ddot(2,:),'b:','LineWidth',1.6);
+    plot(time,gradient(x_DD(2,:),time),'LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,gradient(x_SD(2,:),time),'-','LineWidth',1.0,'Color',[0 0 0.8]);
     % plot(time,gradient(data(6,:),time),'r--','LineWidth',1.6);  % to check computation of acceleration
     title('\bfAcceleration');
     xlabel('\bfTime [s]');
@@ -170,17 +139,16 @@ if(doShowDynamicsPlots)
     xlim([0,max(time)]);
 end
 
-%% Animate result in a new plot
+%% animate "true" pendulum in a new plot
 if(doAnimateSystem)
     figure;
     hold on; grid on;
     
     % animate each frame of results
-    for tIdx = 1:size(data,2)
+    for tIdx = 1:floor(0.05/dt):size(x_SD,2)
         
-        % extract state at current timestep
-        theta = data(1,tIdx);
-        theta_dot = data(2,tIdx);
+        % extract position at current timestep
+        theta = x_SD(1,tIdx);
         
         % recover length
         l = sysParams.l;
@@ -204,6 +172,7 @@ if(doAnimateSystem)
         xlim([-1.2*l 1.2*l]);
         ylim([-1.2*l 1.2*l]);
         drawnow;
+        pause(0.01);
     end
 end
 
@@ -212,12 +181,10 @@ end
 % we will step through time and filter to the current timestep
 
 % first, draw a sample of particles from the initial state
-mu = data(1:2,1);
-COV = COV_w;
-Xp = mvnrnd(mu',COV_0,Np)';
-x_true = data(:,1);
-
-
+x_true = x_SD(:,1);
+Xp = mvnrnd(x_true',COV_0,Np)';
+mu = mean(Xp,2);
+COV = (1/(Np-1))*(Xp-mu)*(Xp-mu)';
 
 % step through time
 % evaluating one "frame" at a time moving from
@@ -256,12 +223,12 @@ for obsIdx = 1:3%length(t_samp)
         % compute "proposal distribution" by propagating particles forward
         % in time through system model
         odeTime = [0 dt_samp];
-        sysParamsUD.w_t = mvnrnd([0 0]',COV_w,1)';
-        [T,X] = ode45(@(t,X) propDynamics(t,X,sysParamsUD),odeTime,x_prev,opts);
+        sysParamsSD.w_t = mvnrnd([0 0]',COV_w,1)';
+        [T,X] = ode45(@(t,X) propDynamics(t,X,sysParamsSD),odeTime,x_prev,opts);
         x_prior(:,particleIdx) = X(end,:)';
         
         % get observation and compute innovation/residual "r"
-        r(particleIdx) = z_samp(obsIdx) - sysParamsUD.l*cos( x_prior(1,particleIdx) );
+        r(particleIdx) = z_samp(obsIdx) - sysParamsSD.l*cos( x_prior(1,particleIdx) );
         
         % compute particle weight, using a simple gaussian centered at zero
         % innovation
@@ -400,26 +367,16 @@ for obsIdx = 1:3%length(t_samp)
     
 end
 
-% function to propagate state for ODE solver
-function  Xdot = propDynamics(t,X,sysParams)
-
-% recover paramters
-m = sysParams.m;
-l = sysParams.l;
-c = sysParams.c;
-g = sysParams.g;
-w_t = sysParams.w_t;
-
-% deconstruct state vector
-theta = X(1);
-theta_dot = X(2);
-
-% construct Xdot from differential equation
-% note:     X    = [theta      theta_dot]
-% therefore Xdot = [theta_dot  theta_ddot] + w_t
-Xdot = zeros(2,1);
-
-% stochastic truth
-Xdot(1,:) = theta_dot + w_t(1);
-Xdot(2,:) = -(c/(m*l^2))*theta_dot -(g/l)*sin(theta) + w_t(2);
+% function to propagate state via finite differences (discritized dynamics)
+function x_traj = stepDynamics(N,dt,x,sysParams)
+    x_traj = zeros(size(x,1),N+1);
+    x_traj(:,1) = x;
+    
+    for i = 1:N
+        x_next = zeros(size(x)); 
+        x_next(1) = x(1)+dt*x(2);
+        x_next(2) = (1- (sysParams.c*dt/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*dt/sysParams.l)*sin(x(1));
+        x = x_next + mvnrnd([0 0]',sysParams.COV_w_true,1)';
+        x_traj(:,i+1) = x;
+    end
 end

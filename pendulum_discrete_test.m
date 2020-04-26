@@ -11,7 +11,7 @@ sysParams.m = 2;
 sysParams.l = 1;
 sysParams.c = 1;
 sysParams.g = 9.81;
-COV_w_true = [0.00002^2 0; 0 0.0002^2];
+sysParams.COV_w_true = [0.0001^2 0; 0 0.0002^2];
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -24,21 +24,26 @@ t0 = 0;
 tf = 20;
 
 % CONTINUOUS PARAMETERS
-dt = 0.01;     % [s] timestep size for continuous system
+dt_c = 0.01;     % [s] timestep size for continuous system
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % DISCRETE PARAMETERS
-h = 0.0001;   % sampling period for discrete system
+dt_d = 0.001;   % sampling period for discrete system
+
+% SAMPLING PARAMETERS
+dt_s = 0.01;
+Ns = round(dt_s/dt_d);
+dt_s = Ns*dt_d;
 
 % continuous data storage
 time = [t0];
 x_c = [X0];
 
 % run continuous simulation
-for t = t0:dt:(tf-dt)
+for t = t0:dt_c:(tf-dt_c)
     
     % calculate timestep for ODE solving
-    odeTime = [t t+dt];
+    odeTime = [t t+dt_c];
     
     % propagate state
     [T,X] = ode45(@(t,X) propDynamics(t,X,sysParams),odeTime,X,opts);
@@ -50,47 +55,60 @@ for t = t0:dt:(tf-dt)
 end
 
 % compute number of steps to take for discrete system
-N = ceil(tf/h);
+N = ceil(tf/dt_d);
 
 % discrete data storage
 x = X0;  % initial coniditons
 x_d = zeros(2,N+1);
 x_d(:,1) = x;
+t_d = (0:N)*dt_d;
 
 % run discrete simulation (note: nonlinear state transition function)
-for i = 1:N
-    
-    % draw noise vector
-    w = mvnrnd([0 0]',COV_w_true,1)';
-    
-    x_next = zeros(size(x));
-    x_next(1) = x(1)+h*x(2);
-    x_next(2) = (1- (sysParams.c*h/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*h/sysParams.l)*sin(x(1));  
-    x = x_next + w;
-    x_d(:,i+1) = x;  
-end
+x_d = stepDynamics(N,dt_d,x,sysParams);
 
 %% plot results
 figure;
-ax = subplot(2,1,1);
+ax = subplot(3,1,1);
 hold on; grid on;
 plot(time,x_c(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot((0:N)*h,x_d(1,:),'-','LineWidth',1,'Color',[0 0 0.8]);
+plot(t_d,x_d(1,:),'-','LineWidth',1,'Color',[0 0 0.8]);
 xlabel('\bfTime [s]');
 ylabel('\bfAngular Position [rad]');
 xlim([0 max(time)]);
-legend('Continuous',sprintf('Discrete \\Deltat = %0.4fs',h));
+legend('Continuous (ode45)',sprintf('Discrete \\Deltat = %0.4fs',dt_d));
 
-ax(end+1) = subplot(2,1,2);
+ax(end+1) = subplot(3,1,2);
 hold on; grid on;
 plot(time,x_c(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot((0:N)*h,x_d(2,:),'-','LineWidth',1,'Color',[0 0 0.8]);
+plot(t_d,x_d(2,:),'-','LineWidth',1,'Color',[0 0 0.8]);
 xlabel('\bfTime [s]');
 ylabel('\bfAngular Velocity [rad/s]');
 xlim([0 max(time)]);
+
+ax(end+1) = subplot(3,1,3);
+hold on; grid on;
+plot(time,gradient(x_c(2,:),time),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+plot(t_d,gradient(x_d(2,:),t_d),'-','LineWidth',1,'Color',[0 0 0.8]);
+xlabel('\bfTime [s]');
+ylabel('\bfAngular Acceleration [rad/s^2]');
+xlim([0 max(time)]);
 linkaxes(ax,'x');
 
-%% function to propagate state for ODE solver (continuous system)
+% function to propagate state via finite differences (discritized dynamics)
+function x_traj = stepDynamics(N,dt,x,sysParams)
+    x_traj = zeros(size(x,1),N+1);
+    x_traj(:,1) = x;
+    
+    for i = 1:N
+        x_next = zeros(size(x)); 
+        x_next(1) = x(1)+dt*x(2);
+        x_next(2) = (1- (sysParams.c*dt/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*dt/sysParams.l)*sin(x(1));
+        x = x_next + mvnrnd([0 0]',sysParams.COV_w_true,1)';
+        x_traj(:,i+1) = x;
+    end
+end
+
+%% function to propagate state via ODE solver ("continuous" dynamics)
 function  Xdot = propDynamics(t,X,sysParams)
 
 % recover paramters
