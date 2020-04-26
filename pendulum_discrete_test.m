@@ -26,11 +26,11 @@ dt = 0.01;     % [s] timestep size for continuous system
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % DISCRETE PARAMETERS
-h = 0.001;   % sampling period for discrete system
+h = 0.0001;   % sampling period for discrete system
 
 % continuous data storage
 time = [t0];
-data = [X0];
+x_c = [X0];
 
 % run continuous simulation
 for t = t0:dt:(tf-dt)
@@ -44,38 +44,47 @@ for t = t0:dt:(tf-dt)
     % store results from this timestep
     X = X(end, :)';
     time(end+1)   = T(end);
-    data(:,end+1) = X; % note: discarding state values at intermediate timesteps calculated by ode45()
+    x_c(:,end+1) = X; % note: discarding state values at intermediate timesteps calculated by ode45()
 end
 
-% compute state transition matrix
-% NOTE: the sine term has been LINEARIZED to produce this!
-c1 = 1 + sysParams.c*h/(sysParams.m*sysParams.l^2) + sysParams.g*h^2/sysParams.l;
-PHI = [(2 + (sysParams.c*h)/(sysParams.m*sysParams.l^2))/c1, -1/c1; 1 0];
-
-% compute number of steps to take
+% compute number of steps to take for discrete system
 N = ceil(tf/h);
 
 % discrete data storage
-x = [X0(1); X0(1)-(h*X0(2))];  % initial coniditons
-x_hist = zeros(2,N+1);
-x_hist(:,1) = x;
+x = X0;  % initial coniditons
+x_d = zeros(2,N+1);
+x_d(:,1) = x;
 
 % run discrete simulation
 for i = 1:N
-    x = PHI*x;
-    x_hist(:,i+1) = x;  
+    x_next = zeros(size(x));
+    x_next(1) = x(1)+h*x(2);
+    x_next(2) = (1- (sysParams.c*h/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*h/sysParams.l)*sin(x(1));  
+    x = x_next;
+    x_d(:,i+1) = x;  
 end
 
+%% plot results
 figure;
+ax = subplot(2,1,1);
 hold on; grid on;
-plot(time,data(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot((0:N)*h,x_hist(1,:),'--','LineWidth',1.6,'Color',[0 0 0.8]);
+plot(time,x_c(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+plot((0:N)*h,x_d(1,:),'--','LineWidth',1.6,'Color',[0 0 0.8]);
 xlabel('\bfTime [s]');
-ylabel('\bfPosition [rad]');
+ylabel('\bfAngular Position [rad]');
 xlim([0 max(time)]);
 legend('Continuous',sprintf('Discrete \\Deltat = %0.4fs',h));
 
-% function to propagate state for ODE solver
+ax(end+1) = subplot(2,1,2);
+hold on; grid on;
+plot(time,x_c(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+plot((0:N)*h,x_d(2,:),'--','LineWidth',1.6,'Color',[0 0 0.8]);
+xlabel('\bfTime [s]');
+ylabel('\bfAngular Velocity [rad/s]');
+xlim([0 max(time)]);
+linkaxes(ax,'x');
+
+%% function to propagate state for ODE solver (continuous system)
 function  Xdot = propDynamics(t,X,sysParams)
 
 % recover paramters
