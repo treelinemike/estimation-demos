@@ -2,6 +2,7 @@
 
 % restart
 close all; clear all; clc;
+rng(1234,'twister');
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
@@ -10,6 +11,7 @@ sysParams.m = 2;
 sysParams.l = 1;
 sysParams.c = 1;
 sysParams.g = 9.81;
+COV_w_true = [0.00002^2 0; 0 0.0002^2];
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -55,12 +57,16 @@ x = X0;  % initial coniditons
 x_d = zeros(2,N+1);
 x_d(:,1) = x;
 
-% run discrete simulation
+% run discrete simulation (note: nonlinear state transition function)
 for i = 1:N
+    
+    % draw noise vector
+    w = mvnrnd([0 0]',COV_w_true,1)';
+    
     x_next = zeros(size(x));
     x_next(1) = x(1)+h*x(2);
     x_next(2) = (1- (sysParams.c*h/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*h/sysParams.l)*sin(x(1));  
-    x = x_next;
+    x = x_next + w;
     x_d(:,i+1) = x;  
 end
 
@@ -69,7 +75,7 @@ figure;
 ax = subplot(2,1,1);
 hold on; grid on;
 plot(time,x_c(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot((0:N)*h,x_d(1,:),'--','LineWidth',1.6,'Color',[0 0 0.8]);
+plot((0:N)*h,x_d(1,:),'-','LineWidth',1,'Color',[0 0 0.8]);
 xlabel('\bfTime [s]');
 ylabel('\bfAngular Position [rad]');
 xlim([0 max(time)]);
@@ -78,7 +84,7 @@ legend('Continuous',sprintf('Discrete \\Deltat = %0.4fs',h));
 ax(end+1) = subplot(2,1,2);
 hold on; grid on;
 plot(time,x_c(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-plot((0:N)*h,x_d(2,:),'--','LineWidth',1.6,'Color',[0 0 0.8]);
+plot((0:N)*h,x_d(2,:),'-','LineWidth',1,'Color',[0 0 0.8]);
 xlabel('\bfTime [s]');
 ylabel('\bfAngular Velocity [rad/s]');
 xlim([0 max(time)]);
