@@ -6,7 +6,7 @@ doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 
 % simulation time parameters
-COV_w_true = [0.01^2 0; 0 0.0875^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+COV_w_true = [1^2 0; 0 0.00^2];   % covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
 t0 = 0;       % [s] simulation start time
 tf = 20;      % [s] simulation end time
 dt = 0.01;     % [s] timestep size
@@ -49,7 +49,7 @@ theta_m_0     = 25*pi/180;      % [rad]
 theta_m_dot_0 = 0;              % [rad/s]
 X0 = [theta_t_0 theta_t_dot_0 theta_m_0 theta_m_dot_0 theta_t_0 theta_t_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 X = X0;
-COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial particles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
 
 % data storage
 time = [t0];
@@ -89,7 +89,7 @@ for t = t0:dt:(tf-dt)
     % store results from this timestep
     time(end+1)   = T(end);
     data(:,end+1) = X; % note: discarding state values at intermediate timesteps calculated by ode45()
-    theta_ddot(:,end+1) = -(sysParams.c/(sysParams.m*sysParams.l^2)).*[X(2);X(6)]-1*(sysParams.g/sysParams.l).*sin([X(1);X(5)]);
+    theta_ddot(:,end+1) = -(sysParams.c/(sysParams.m*sysParams.l^2)).*[X(2);X(6)]-1*(sysParams.g/sysParams.l).*sin([X(1);X(5)]) + [sysParams.w_t(2);0];
 end
 
 %% compute undamped and damped frequencies and time constants
@@ -100,7 +100,7 @@ zeta = (sysParams.c/(sysParams.m*sysParams.l^2))/c_cr_eq;
 omega_d = omega_n*sqrt(1-zeta^2)
 tau_d = 2*pi/omega_d
 
-%% plot time series for detail trajectory
+%% plot time series trajectories
 if(doShowDynamicsPlots)
     ph = [];
     figure;
@@ -141,26 +141,26 @@ if(doShowDynamicsPlots)
     set(gcf,'Position',[0697 0122 0550 0822]);
     ax2 = subplot(3,1,1);
     hold on; grid on;
-    
-    plot(time,data(5,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,data(1,:),'b:','LineWidth',1.6);
-    legend('Stochastic Truth','Deterministic Evolution')
+  
+    plot(time,data(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,data(5,:),'b:','LineWidth',1.6);
+    legend('Stochastic Truth','Deterministic Evolution');
     title('\bfAngular Position');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad]');
     
     ax2(end+1) = subplot(3,1,2);
     hold on; grid on;
-    plot(time,data(6,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,data(2,:),'b:','LineWidth',1.6);
+    plot(time,data(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,data(6,:),'b:','LineWidth',1.6);
     title('\bfAngular Velocity');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad/s]');
     
     ax2(end+1) = subplot(3,1,3);
     hold on; grid on;
-    plot(time,theta_ddot(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,theta_ddot(1,:),'b:','LineWidth',1.6);
+    plot(time,theta_ddot(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
+    plot(time,theta_ddot(2,:),'b:','LineWidth',1.6);
     % plot(time,gradient(data(6,:),time),'r--','LineWidth',1.6);  % to check computation of acceleration
     title('\bfAcceleration');
     xlabel('\bfTime [s]');
@@ -213,7 +213,7 @@ end
 
 % first, draw a sample of particles from the initial state
 mu = data(1:2,1);
-COV = COV_w
+COV = COV_w;
 Xp = mvnrnd(mu',COV_0,Np)';
 x_true = data(:,1);
 
