@@ -14,7 +14,7 @@ doShowDynamicsPlots = 1;
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
 tf = 20;       % [s] simulation end time
-dt = 0.001;    % [s] simulation timestep size (discritized dynamics)
+dt = 0.0001;    % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
 dt_samp = 0.05;      % observation sampling period
@@ -218,14 +218,14 @@ for obsIdx = 1:3%length(t_samp)
     for particleIdx = 1:Np
         
         % get previous posterior particle set
-        x_prev = Xp(:,particleIdx);
+        x_prev_i = Xp(:,particleIdx);
         
         % compute "proposal distribution" by propagating particles forward
-        % in time through system model
+        % in time through naive DU (deterministic, undamped) system model
         odeTime = [0 dt_samp];
-        sysParamsSD.w_t = mvnrnd([0 0]',COV_w,1)';
-        [T,X] = ode45(@(t,X) propDynamics(t,X,sysParamsSD),odeTime,x_prev,opts);
-        x_prior(:,particleIdx) = X(end,:)';
+        x_prior_i = stepDynamics(floor(dt_samp/dt),dt,x_prev_i,sysParamsDU);
+        
+        x_prior(:,particleIdx) = x_prior_i(:,end);
         
         % get observation and compute innovation/residual "r"
         r(particleIdx) = z_samp(obsIdx) - sysParamsSD.l*cos( x_prior(1,particleIdx) );
@@ -271,8 +271,8 @@ for obsIdx = 1:3%length(t_samp)
     plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
     fprintf('Prior: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(obsIdx));
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
-    plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
-    plot(data(3,:),data(4,:),'-','Color',[0 0 0.5],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+    plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0 0.8],'LineWidth',1); % true trajectory in state space
+    plot(x_DU(1,:),x_DU(2,:),'-','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
     
     % plot innovation
     subplot(2,3,2);
