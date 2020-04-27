@@ -10,6 +10,7 @@ rng(4265,'twister');
 % general options
 doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
+resultPlotID = 2314;
 
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
@@ -17,14 +18,15 @@ tf = 20;       % [s] simulation end time
 dt = 0.01;     % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
-dt_samp = 0.5;      % observation sampling period
+dt_samp = 0.3;      % observation sampling period
 COV_v = (0.02)^2;  % VARIANCE of sensor noise; assumed to be well known (true value = value used in estimator)
 
 % estimator options
-Np = 200;                                   % number of particles
-COV_0 = [(1*pi/180)^2 0; 0 (5*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
-COV_w = [0.04^2 0; 0 0.2^2];                % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
-resamplingMethod = 'SIR';                   % 'SIR', 'Reg'
+Np = 2000;                                    % number of particles
+COV_0 = [(1*pi/180)^2 0; 0 (3*pi/180)^2];     % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+COV_w_true = [(0.012*pi/180)^2 0; 0 (0.017*pi/180)^2];        % true state propagation covariance
+COV_w = [(0.25*pi/180)^2 0; 0 (0.1*pi/180)^2]; % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+resamplingMethod = 'SIR';                     % 'SIR', 'Reg'
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -36,9 +38,9 @@ x0 = [theta_0 theta_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 sysParams = [];
 sysParams.m = 2;
 sysParams.l = 9.655;   % 9.655m starting at 25deg gives a circular phase portrait!
-sysParams.c = 80;
+sysParams.c = 60;
 sysParams.g = 9.81;
-sysParams.COV_w_true = [0.0002^2 0; 0 0.0003^2];
+sysParams.COV_w = COV_w_true;
 
 % SD: parameters for Stochastic, Damped system
 % this is the "true" signal
@@ -47,17 +49,18 @@ sysParamsSD = sysParams;
 % DD: parameters for Deterministic, Damped system
 % used for comparison to the "true" signal, highlighting stochastic effects
 sysParamsDD = sysParams;
-sysParamsDD.COV_w_true = zeros(2,2);
+sysParamsDD.COV_w = zeros(2,2);
 
 % DU: parameters for Deterministic, Undamped system
 % this is how a naive model would propagate system trajectory
 sysParamsDU = sysParams;
+sysParamsDU.COV_w = zeros(2,2);
 sysParamsDU.c = 0;
-sysParamsDU.COV_w_true = zeros(2,2);
 
 % SU: parameters for Stochastic, Undamped system
 % THIS IS THE MODEL ASSUMED IN / USED BY THE ESTIMATOR
 sysParamsSU = sysParams;
+sysParamsSU.COV_w = COV_w;
 sysParamsSU.c = 0;
 
 % compute undamped and damped frequencies and time constants
@@ -117,7 +120,7 @@ end
 % the other is the stochastic solution which we will take as acutal truth
 % for the estimator
 if(doShowDynamicsPlots)
-    figure;
+    figure(resultPlotID);
     set(gcf,'Position',[0697 0122 0550 0822]);
     ax2 = subplot(3,1,1);
     hold on; grid on;
@@ -199,13 +202,14 @@ COV = (1/(Np-1))*(Xprev-mu)*(Xprev-mu)';
 pStat(1).truth = x_true;
 pStat(1).post.mean = mean(Xprev,2);
 pStat(1).post.cov = COV;
+Xtraj = mu;
 
 % step through time
 % evaluating one "frame" at a time moving from
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for k = 2:2%length(t_samp)
+for k = 2:40%length(t_samp)
     
     % initialize figure
     figure;
@@ -241,10 +245,10 @@ for k = 2:2%length(t_samp)
     for particleIdx = 1:Np
         
         % compute "prior" state of this particle at time step k by propagating it forward
-        % in time through naive DU (deterministic, undamped) system model
+        % in time through naive SU (stochastic, undamped) system model
         % from time step k-1 (previous posterior) to time step k (current prior)
         % note: using FINITE DIFFERENCE approximation to ODE with forward Euler integration
-        x_prior_i = stepDynamics(floor(dt_samp/dt),dt,Xprev(:,particleIdx),sysParamsDU);
+        x_prior_i = stepDynamics(floor(dt_samp/dt),dt,Xprev(:,particleIdx),sysParamsSU);
         Xprior(:,particleIdx) = x_prior_i(:,end);   % discard trajectory, keeping only final state
         
         % get observation and compute innovation/residual: r = z_i - H(x_i)
@@ -302,9 +306,10 @@ for k = 2:2%length(t_samp)
     end
     
     % get posterior statistics
-    [mu,cov] = getPStats(Xprior);
+    [mu,cov] = getPStats(Xpost);
     pStat(k).post.mean = mu;
     pStat(k).post.cov = cov;
+    Xtraj(:,end+1) = mu;
     
     % plot prior distribution
     subplot(2,3,1);
@@ -315,11 +320,7 @@ for k = 2:2%length(t_samp)
     [vec,val] = eig(pStat(k).prior.cov);
     plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
     plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
-    
-    
-    fprintf('Prior Mean: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(k));
-    
-      
+          
     % show one period of the DU (deterministic, undamped) phase portrait
     % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
     % this is how our naive model would evolve without observations (and
@@ -339,7 +340,9 @@ for k = 2:2%length(t_samp)
     plot(pStat(k-1).truth(1),pStat(k-1).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
     plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
     
-    
+    % show estimated state trajectory
+    plot(Xtraj(1,:),Xtraj(2,:),'.-','Color',[1 0 1],'LineWidth',2,'MarkerSize',15);
+ 
     
     % plot innovation
     subplot(2,3,2);
@@ -362,9 +365,15 @@ for k = 2:2%length(t_samp)
     
     % plot posterior distribution after resampling
     subplot(2,3,1);
-    plot(Xpost(1,:),Xpost(2,:),'k.','MarkerSize',2);
-    mu = mean(Xpost,2);
-    plot(mu(1),mu(2),'k*','MarkerSize',10,'LineWidth',3);
+    plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
+     
+    % add "ellipse" for posterior particle set at this time step (k)
+    [vec,val] = eig(pStat(k).post.cov);
+    plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 1]);
+    plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
+          
+    
+    
     
     % show bayesian update in 1D
     subplot(2,3,4:6);
@@ -432,6 +441,26 @@ for k = 2:2%length(t_samp)
     %     error('done');
     
     
+    % display some stats in the console for this timestep
+    fprintf('%03d: Prior Mean: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n', ...
+        k, ...
+        pStat(k).prior.mean(1), ...
+        pStat(k).prior.mean(2), ...
+        pStat(k).truth(1), ...
+        pStat(k).truth(2), ...
+        z_samp(k) );
+    
+    % show current plot now
+    drawnow;
+    
+end
+
+if(doShowDynamicsPlots)
+    figure(resultPlotID);
+    subplot(3,1,1);
+    plot(t_samp(1:size(Xtraj,2)),Xtraj(1,:),'m-','LineWidth',2)
+    subplot(3,1,2);
+    plot(t_samp(1:size(Xtraj,2)),Xtraj(2,:),'m-','LineWidth',2)
 end
 
 % function to compute the mean and covariance of a particle set
@@ -452,7 +481,7 @@ for i = 1:N
     x_next = zeros(size(x));
     x_next(1) = x(1)+dt*x(2);
     x_next(2) = (1- (sysParams.c*dt/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*dt/sysParams.l)*sin(x(1));
-    x = x_next + mvnrnd([0 0]',sysParams.COV_w_true,1)';
+    x = x_next + mvnrnd([0 0]',sysParams.COV_w,1)';
     x_traj(:,i+1) = x;
 end
 end
