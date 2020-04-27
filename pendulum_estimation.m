@@ -14,7 +14,7 @@ doShowDynamicsPlots = 1;
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
 tf = 20;       % [s] simulation end time
-dt = 0.0001;    % [s] simulation timestep size (discritized dynamics)
+dt = 0.001;    % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
 dt_samp = 0.05;      % observation sampling period
@@ -58,6 +58,15 @@ sysParamsDU.COV_w_true = zeros(2,2);
 % THIS IS THE MODEL ASSUMED IN / USED BY THE ESTIMATOR
 sysParamsSU = sysParams;
 sysParamsSU.c = 0;
+
+
+% compute undamped and damped frequencies and time constants
+omega_n = sqrt(sysParams.g/sysParams.l);
+tau_n = 2*pi/omega_n;
+c_cr_eq = 2*omega_n;
+zeta = (sysParams.c/(sysParams.m*sysParams.l^2))/c_cr_eq;
+omega_d = omega_n*sqrt(1-zeta^2);
+tau_d = 2*pi/omega_d;
 
 % compute number of steps to take for discrete system
 % and assemble time vector
@@ -191,7 +200,7 @@ COV = (1/(Np-1))*(Xp-mu)*(Xp-mu)';
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:3%length(t_samp)
+for obsIdx = 1:1%length(t_samp)
     
     % initialize figure
     figure;
@@ -271,8 +280,15 @@ for obsIdx = 1:3%length(t_samp)
     plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
     fprintf('Prior: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(obsIdx));
     plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
+    
+    % show true trajectory and one period of the undamped phase portrait
+    % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
     plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0 0.8],'LineWidth',1); % true trajectory in state space
-    plot(x_DU(1,:),x_DU(2,:),'-','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+    lowerBoundIdx = find(time >= 0.8*tau_n, 1, 'first');
+    upperBoundIdx = find(time >= 1.2*tau_n, 1, 'first');
+    [~,onePerIdx] = max( x_DU(1,lowerBoundIdx:upperBoundIdx) );
+    onePerIdx = onePerIdx + lowerBoundIdx;
+    plot(x_DU(1,1:onePerIdx),x_DU(2,1:onePerIdx),'-','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
     
     % plot innovation
     subplot(2,3,2);

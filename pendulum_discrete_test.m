@@ -35,6 +35,15 @@ dt_s = 0.01;
 Ns = round(dt_s/dt_d);
 dt_s = Ns*dt_d;
 
+%% compute undamped and damped frequencies and time constants
+omega_n = sqrt(sysParams.g/sysParams.l);
+tau_n = 2*pi/omega_n;
+c_cr_eq = 2*omega_n;
+zeta = (sysParams.c/(sysParams.m*sysParams.l^2))/c_cr_eq;
+omega_d = omega_n*sqrt(1-zeta^2);
+tau_d = 2*pi/omega_d;
+
+%% CONTINUOUS SIMULATION 
 % continuous data storage
 time = [t0];
 x_c = [X0];
@@ -54,6 +63,7 @@ for t = t0:dt_c:(tf-dt_c)
     x_c(:,end+1) = X; % note: discarding state values at intermediate timesteps calculated by ode45()
 end
 
+%% DISCRETE SIMULATION
 % compute number of steps to take for discrete system
 N = ceil(tf/dt_d);
 
