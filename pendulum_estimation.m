@@ -4,8 +4,8 @@ close all; clear all; clc;
 % reset random number generator using consistant seed
 % although noise is random it will be the same for every run
 % rng(2374,'twister');
-rng(4265,'twister');    
-% rng(111,'twister');   
+rng(4265,'twister');
+% rng(111,'twister');
 
 % general options
 doAnimateSystem = 0;
@@ -14,16 +14,17 @@ doShowDynamicsPlots = 1;
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
 tf = 20;       % [s] simulation end time
-dt = 0.001;    % [s] simulation timestep size (discritized dynamics)
+dt = 0.01;     % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
-dt_samp = 0.05;      % observation sampling period
-COV_v = (0.002)^2;  % VARIANCE of sensor noise; assumed to be well known (truth value = value used in estimator)
+dt_samp = 0.5;      % observation sampling period
+COV_v = (0.02)^2;  % VARIANCE of sensor noise; assumed to be well known (true value = value used in estimator)
 
 % estimator options
-Np = 2000;                                  % number of particles
-COV_0 = [(5*pi/180)^2 0; 0 (30*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+Np = 200;                                   % number of particles
+COV_0 = [(1*pi/180)^2 0; 0 (5*pi/180)^2];  % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
 COV_w = [0.04^2 0; 0 0.2^2];                % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+resamplingMethod = 'SIR';                   % 'SIR', 'Reg'
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -34,8 +35,8 @@ x0 = [theta_0 theta_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 % that we can pass through the ODE solver to the update function
 sysParams = [];
 sysParams.m = 2;
-sysParams.l = 1;
-sysParams.c = 1;
+sysParams.l = 9.655;   % 9.655m starting at 25deg gives a circular phase portrait!
+sysParams.c = 80;
 sysParams.g = 9.81;
 sysParams.COV_w_true = [0.0002^2 0; 0 0.0003^2];
 
@@ -59,7 +60,6 @@ sysParamsDU.COV_w_true = zeros(2,2);
 sysParamsSU = sysParams;
 sysParamsSU.c = 0;
 
-
 % compute undamped and damped frequencies and time constants
 omega_n = sqrt(sysParams.g/sysParams.l);
 tau_n = 2*pi/omega_n;
@@ -81,9 +81,11 @@ x_SU = stepDynamics(Nsteps,dt,x0,sysParamsSU);
 
 % sample the true signal per measurement model
 z_true = sysParams.l*cos(x_SD(1,:));
-t_samp = dt_samp:dt_samp:time(end);  % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
+t_samp = 0:dt_samp:time(end);
 z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
-x_samp = interp1(time,x_SD',t_samp)';
+z_samp(1) = NaN; % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
+x_SD_samp = interp1(time,x_SD',t_samp)';  % true trajectory at sample times
+x_DU_samp = interp1(time,x_DU',t_samp)';  % naive trajectory sample times
 
 %% plot time series trajectories
 if(doShowDynamicsPlots)
@@ -99,7 +101,7 @@ if(doShowDynamicsPlots)
     ylabel('\bf Angular Position [rad]');
     legend(ph,'Naive Model','Truth','Location','SouthEast');
     xlim([min(time) max(time)]);
-
+    
     ax(end+1) = subplot(2,1,2);
     hold on; grid on;
     plot(time,z_true,'Color',[0 0 0.8],'LineWidth',1.6);
@@ -191,104 +193,153 @@ end
 
 % first, draw a sample of particles from the initial state
 x_true = x_SD(:,1);
-Xp = mvnrnd(x_true',COV_0,Np)';
-mu = mean(Xp,2);
-COV = (1/(Np-1))*(Xp-mu)*(Xp-mu)';
+Xprev = mvnrnd(x_true',COV_0,Np)';
+mu = mean(Xprev,2);
+COV = (1/(Np-1))*(Xprev-mu)*(Xprev-mu)';
+pStat(1).truth = x_true;
+pStat(1).post.mean = mean(Xprev,2);
+pStat(1).post.cov = COV;
 
 % step through time
 % evaluating one "frame" at a time moving from
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for obsIdx = 1:1%length(t_samp)
+for k = 2:2%length(t_samp)
     
     % initialize figure
     figure;
     set(gcf,'Position',[0198 0102 1527 0833]);
     
-    % show particles at start of the estimation frame (state 1)
+    %%%%%%%%%% PLOT PREVIOUS (time k-1) POSTERIOR DISTRIBUTION %%%%%%%%%%%%
+    % note: particles Xp represent samples from the posterior at time k-1 (previous time step)
     subplot(2,3,1);
-    title('\bfEvolution in State Space');
     hold on; grid on;
-    plot(Xp(1,:),Xp(2,:),'.','MarkerSize',5,'Color',[.6 .6 1]);
-    plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
-    plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
-    %     plot(data(1,:),data(2,:),'-','Color',[0 0.5 0],'LineWidth',1); % true trajectory in state space
+    title('\bfEvolution in State Space');
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfx_2: Angular Velocity [rad/s]');
+    plot(Xprev(1,:),Xprev(2,:),'.','MarkerSize',5,'Color',[0.6 .6 .6]);
+   
+    % add "ellipse" for previous particle set
+    [vec,val] = eig(pStat(k-1).post.cov);
+    endpts = vec*sqrt(val);
+%     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
+%     plot(pStat(k-1).post.mean(1)+[-endpts(2,1) endpts(2,1)],pStat(k-1).post.mean(2)+[-endpts(2,2) endpts(2,2)],'k-','LineWidth',2);
+    plot(pStat(k-1).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k-1).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[0 0 0]);
+    plot(pStat(k-1).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k-1).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[0 0 0]);
     
-    % get new truth and observation
-    x_true = x_samp(:,obsIdx);
     
-    % now propigate and update each particle
-    x_prior = zeros(2,Np);
-    r = zeros(1,Np);
-    w = zeros(1,Np);
+    %%%%%%%%%% MOVE TO CURRENT TIME STEP (k) %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    % now propigate and update each particle forward using the
+    % STOCHASTIC, ASSUMED MODEL OF SYSTEM DYNAMICS to produce the
+    % "prior" distribution at time step k
+    Xprior = zeros(2,Np);  % initialize prior particle set to all zeros
+    r = zeros(1,Np);        % initialize residual for each particle (difference between true measurement and expected measurement for specific particle)
+    w = zeros(1,Np);        % initialize weight for each particle
+    tic
     for particleIdx = 1:Np
         
-        % get previous posterior particle set
-        x_prev_i = Xp(:,particleIdx);
-        
-        % compute "proposal distribution" by propagating particles forward
+        % compute "prior" state of this particle at time step k by propagating it forward
         % in time through naive DU (deterministic, undamped) system model
-        odeTime = [0 dt_samp];
-        x_prior_i = stepDynamics(floor(dt_samp/dt),dt,x_prev_i,sysParamsDU);
+        % from time step k-1 (previous posterior) to time step k (current prior)
+        % note: using FINITE DIFFERENCE approximation to ODE with forward Euler integration
+        x_prior_i = stepDynamics(floor(dt_samp/dt),dt,Xprev(:,particleIdx),sysParamsDU);
+        Xprior(:,particleIdx) = x_prior_i(:,end);   % discard trajectory, keeping only final state
         
-        x_prior(:,particleIdx) = x_prior_i(:,end);
-        
-        % get observation and compute innovation/residual "r"
-        r(particleIdx) = z_samp(obsIdx) - sysParamsSD.l*cos( x_prior(1,particleIdx) );
+        % get observation and compute innovation/residual: r = z_i - H(x_i)
+        r(particleIdx) = z_samp(k) - sysParamsSD.l*cos( Xprior(1,particleIdx) );
         
         % compute particle weight, using a simple gaussian centered at zero
         % innovation
         % could use a different weighting scheme here
         %%%%% TODO: DO THIS OUTSIDE OF PARTICLE LOOP! %%%%%%%%%
-        w(particleIdx) = expm(-0.5*r(particleIdx)'*inv(COV_v)*r(particleIdx)); % using expm even though the argument happens to be a scalar in this case
+        w(particleIdx) = expm(-0.5*r(particleIdx)'*inv(COV_v)*r(particleIdx)); % using expm even though the argument of the exponential happens to be a scalar in this case
         
     end
+    toc
     
     % compute mean and standard deviation of prior particle set
-    x_prior_mean_1 = mean(x_prior(1,:));
-    x_prior_ctr_1 = x_prior(1,:)-x_prior_mean_1;
-    x_prior_stdev_1 = sqrt( 1/(length(x_prior_ctr_1)-1)*(x_prior_ctr_1*x_prior_ctr_1'));
-    assert( abs(x_prior_stdev_1 - std(x_prior(1,:)))/std(x_prior(1,:)) < 0.01 , 'Standard deviation calculation not within 1%!');
+    % also get the true state
+    [mu,cov] = getPStats(Xprior);
+    pStat(k).prior.mean = mu;
+    pStat(k).prior.cov  = cov;
+    pStat(k).truth = x_SD_samp(:,k);
+      
+    % check covariance calculation
+    % standard deviation of particle positions (first state element)
+    % should be within 1% of the value calculated with MATLAB std() function
+    assert( abs( sqrt(pStat(k).prior.cov(1,1)) - std(Xprior(1,:)) )/std(Xprior(1,:) ) < 0.01 , 'Standard deviation calculation not within 1%!');
     
     % normalize weights to sum to 1.0
-    w = w ./sum(w);
+    q = w ./sum(w);
     
-    % compute "CDF" in column 3
-    wCDF_all = [x_prior(1,:)',w',w',(1:Np)'];
-    wCDF_all = sortrows(wCDF_all,1,'ascend');
-    wCDF_all(:,3) = cumsum(wCDF_all(:,2));
+    % resample the prior particles using likelihood from
+    % data and data noise model to produce the posterior particle set
+    switch(resamplingMethod)     
+        case 'SIR'
+            
+            % Sampling/Importance Resampling
+            % a.k.a. Sequential Importance Resampling
+            
+            % compute "CDF" in column 3
+            qCDF_all = [Xprior(1,:)',q',q',(1:Np)'];
+            qCDF_all = sortrows(qCDF_all,1,'ascend');
+            qCDF_all(:,3) = cumsum(qCDF_all(:,2));
+            
+            % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
+            % and assemble posterior
+            % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
+            % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
+            resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), rand(Np,1));
+            Xpost = Xprior(:,qCDF_all(resampIdx,4));
+            
+        case 'Reg'
+            % Regularization
+            
+        otherwise
+            error('Invalid resampling method!');
+    end
     
-    % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
-    % and assemble posterior
-    % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
-    % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
-    resampIdx = arrayfun(@(afin1) find( afin1 <= wCDF_all(:,3),1,'first'), rand(Np,1));
-    x_post = x_prior(:,wCDF_all(resampIdx,4));
-
+    % get posterior statistics
+    [mu,cov] = getPStats(Xprior);
+    pStat(k).post.mean = mu;
+    pStat(k).post.cov = cov;
     
-    
-    mu = mean(x_post,2);
-    COV = (1/(Np-1))*(x_post-mu)*(x_post-mu)';
-    
-    % plot proposal/prior distribution
+    % plot prior distribution
     subplot(2,3,1);
-    plot(x_prior(1,:),x_prior(2,:),'.','MarkerSize',5,'Color',[1 .6 .6]);
-    plot(x_true(1),x_true(2),'o','MarkerSize',20,'Color',[0 0.5 0],'LineWidth',3);
-    plot(x_samp(1,:),x_samp(2,:),'.','Color',[0 0.5 0],'MarkerSize',10);
-    fprintf('Prior: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(obsIdx));
-    plot(mu(1),mu(2),'bo','MarkerSize',10,'LineWidth',3);
+    axis equal;
+    plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     
-    % show true trajectory and one period of the undamped phase portrait
+    % add "ellipse" for prior particle set at this time step (k)
+    [vec,val] = eig(pStat(k).prior.cov);
+    plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
+    plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
+    
+    
+    fprintf('Prior Mean: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n',mu(1),mu(2),x_true(1),x_true(2),z_samp(k));
+    
+      
+    % show one period of the DU (deterministic, undamped) phase portrait
     % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
-    plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0 0.8],'LineWidth',1); % true trajectory in state space
+    % this is how our naive model would evolve without observations (and
+    % without added noise)
     lowerBoundIdx = find(time >= 0.8*tau_n, 1, 'first');
     upperBoundIdx = find(time >= 1.2*tau_n, 1, 'first');
     [~,onePerIdx] = max( x_DU(1,lowerBoundIdx:upperBoundIdx) );
     onePerIdx = onePerIdx + lowerBoundIdx;
-    plot(x_DU(1,1:onePerIdx),x_DU(2,1:onePerIdx),'-','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+    onePerSampIdx = find( t_samp <= time(onePerIdx),1,'last');
+    plot(x_DU(1,1:onePerIdx),x_DU(2,1:onePerIdx),'--','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+    plot(x_DU_samp(1,1:onePerSampIdx),x_DU_samp(2,1:onePerSampIdx),'.','Color',[0.8 0 0],'MarkerSize',15); % assumed model trajectory in state space (deterministic, no damping)
+    
+    % show true system phase portrait (SD: stochastic, damped)
+    % and highlight true states at previous (k-1) and current (k) time steps
+    plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0 0.8],'LineWidth',1); % true trajectory in state space
+    plot(x_SD_samp(1,:),x_SD_samp(2,:),'.','Color',[0 0 0.8],'MarkerSize',15);
+    plot(pStat(k-1).truth(1),pStat(k-1).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
+    plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
+    
+    
     
     % plot innovation
     subplot(2,3,2);
@@ -303,16 +354,16 @@ for obsIdx = 1:1%length(t_samp)
     xlabel('\bfInnovation / Residual [m]');
     ylim([0,1.5 ]);
     
-    mu = mean(x_post,2);
+    mu = mean(Xpost,2);
     %     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
-    Xp = x_post;
-    Np = size(x_post,2);
+    Xprev = Xpost;
+    Np = size(Xpost,2);
     
     
     % plot posterior distribution after resampling
     subplot(2,3,1);
-    plot(x_post(1,:),x_post(2,:),'k.','MarkerSize',2);
-    mu = mean(x_post,2);
+    plot(Xpost(1,:),Xpost(2,:),'k.','MarkerSize',2);
+    mu = mean(Xpost,2);
     plot(mu(1),mu(2),'k*','MarkerSize',10,'LineWidth',3);
     
     % show bayesian update in 1D
@@ -320,32 +371,32 @@ for obsIdx = 1:1%length(t_samp)
     x_test = -pi/2:0.0001:pi/2;
     LH = zeros(size(x_test));  % likelihood function
     for xIdx = 1:length(x_test)
-        LH(xIdx) = normpdf( z_samp(obsIdx) , sysParams.l*cos( x_test(xIdx) ), sqrt(COV_v)  );
+        LH(xIdx) = normpdf( z_samp(k) , sysParams.l*cos( x_test(xIdx) ), sqrt(COV_v)  );
     end
     hold on; grid on;
     %     prior_pdf = normpdf( x_test, x_prior_mean_1, x_prior_stdev_1 );
-    prior_pdf_ks = ksdensity(x_prior(1,:),x_test,'Kernel','epanechnikov');
+    prior_pdf_ks = ksdensity(Xprior(1,:),x_test,'Kernel','epanechnikov');
     LH_norm = LH/trapz(x_test,LH);
     post_pdf = prior_pdf_ks .* LH;
     post_pdf = post_pdf / trapz(x_test,post_pdf);
-%     plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
+    %     plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
     plot(x_test,prior_pdf_ks,'r-','LineWidth',3.6);
     plot(x_test,LH_norm,'b-','LineWidth',3.6);
-%     plot(x_test,post_pdf_est,'m-','LineWidth',1.6);
+    %     plot(x_test,post_pdf_est,'m-','LineWidth',1.6);
     post_pdf_est = prior_pdf_ks.*LH_norm;
     post_pdf_est = post_pdf_est / trapz(x_test,post_pdf_est);
     plot(x_test,post_pdf_est,'m-','LineWidth',3.6);
-
+    
     % test particle propigation using samples
     % need to sort so that trapz() works correctly
-    ppdf = [x_prior(1,:)' w'];
+    ppdf = [Xprior(1,:)' q'];
     ppdf = sortrows(ppdf,1,'ascend');
     ppdf(:,2) = ppdf(:,2)/trapz(ppdf(:,1),ppdf(:,2));
-%     plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
+    %     plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
     
     % estimate density from the resampled PDF
-    post_rs_ks = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
-%     plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
+    post_rs_ks = ksdensity(Xpost(1,:),x_test,'Kernel','epanechnikov');
+    %     plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
     xlim(x_true(1)+[-0.1 0.1]);
     
     
@@ -358,41 +409,50 @@ for obsIdx = 1:1%length(t_samp)
     subplot(2,3,3);
     hold on; grid on;
     xlim(x_true(1)+[-0.05 0.05]);
-    wpdf = wCDF_all(:,2)/trapz(wCDF_all(:,1),wCDF_all(:,2));
-    intCDF = cumtrapz(wCDF_all(:,1),wpdf);
-    plot(wCDF_all(:,1),wpdf,'r-');
-    plot(wCDF_all(:,1),100*wCDF_all(:,3),'b');   
-    plot(wCDF_all(:,1), 100*intCDF,'m-');
+    wpdf = qCDF_all(:,2)/trapz(qCDF_all(:,1),qCDF_all(:,2));
+    intCDF = cumtrapz(qCDF_all(:,1),wpdf);
+    plot(qCDF_all(:,1),wpdf,'r-');
+    plot(qCDF_all(:,1),100*qCDF_all(:,3),'b');
+    plot(qCDF_all(:,1), 100*intCDF,'m-');
     
-    plot(x_post(1,:),zeros(size(x_post)),'m.','MarkerSize',10);
+    plot(Xpost(1,:),zeros(size(Xpost)),'m.','MarkerSize',10);
     x_test = -pi/2:0.0001:pi/2;
-    ppdf = ksdensity(x_post(1,:),x_test,'Kernel','epanechnikov');
+    ppdf = ksdensity(Xpost(1,:),x_test,'Kernel','epanechnikov');
     plot(x_test,ppdf,'m-');
     
     % try again to sample from this pdf
     samp2 = zeros(1,Np);
     for i = 1:length(samp2)
-        samp2(i) = wCDF_all( find( rand <= wCDF_all(:,3), 1, 'first'),1);
+        samp2(i) = qCDF_all( find( rand <= qCDF_all(:,3), 1, 'first'),1);
     end
     plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
     ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
     plot(x_test,ppdf2,'C-');
     
-%     error('done');
+    %     error('done');
     
     
 end
 
+% function to compute the mean and covariance of a particle set
+% Xp is Ns rows (# states), and Np (# particles) columns
+function [mu,cov] = getPStats(Xp)
+mu = mean(Xp,2);
+Xp_ctr = Xp - mu;
+cov = 1/(size(Xp_ctr,2)-1)*(Xp_ctr*(Xp_ctr'));
+end
+
+
 % function to propagate state via finite differences (discritized dynamics)
 function x_traj = stepDynamics(N,dt,x,sysParams)
-    x_traj = zeros(size(x,1),N+1);
-    x_traj(:,1) = x;
-    
-    for i = 1:N
-        x_next = zeros(size(x)); 
-        x_next(1) = x(1)+dt*x(2);
-        x_next(2) = (1- (sysParams.c*dt/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*dt/sysParams.l)*sin(x(1));
-        x = x_next + mvnrnd([0 0]',sysParams.COV_w_true,1)';
-        x_traj(:,i+1) = x;
-    end
+x_traj = zeros(size(x,1),N+1);
+x_traj(:,1) = x;
+
+for i = 1:N
+    x_next = zeros(size(x));
+    x_next(1) = x(1)+dt*x(2);
+    x_next(2) = (1- (sysParams.c*dt/(sysParams.m*sysParams.l^2)))*x(2) - (sysParams.g*dt/sysParams.l)*sin(x(1));
+    x = x_next + mvnrnd([0 0]',sysParams.COV_w_true,1)';
+    x_traj(:,i+1) = x;
+end
 end

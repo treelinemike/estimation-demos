@@ -8,10 +8,10 @@ rng(1234,'twister');
 % that we can pass through the ODE solver to the update function
 sysParams = [];
 sysParams.m = 2;
-sysParams.l = 1;
-sysParams.c = 1;
+sysParams.l = 9.655;
+sysParams.c = 80;
 sysParams.g = 9.81;
-sysParams.COV_w_true = [0.0001^2 0; 0 0.0002^2];
+sysParams.COV_w_true = zeros(2,2);%[0.0001^2 0; 0 0.0002^2];
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -28,7 +28,7 @@ dt_c = 0.01;     % [s] timestep size for continuous system
 opts = odeset('RelTol',1e-8,'AbsTol',1e-12);
 
 % DISCRETE PARAMETERS
-dt_d = 0.001;   % sampling period for discrete system
+dt_d = 0.01;   % sampling period for discrete system
 
 % SAMPLING PARAMETERS
 dt_s = 0.01;
