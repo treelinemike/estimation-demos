@@ -11,6 +11,7 @@ rng(4265,'twister');
 doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
+doSortInSIR = 1;    % easier to understand visually if sorted, but not necessary for algorithm to work
 
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
@@ -209,11 +210,11 @@ Xtraj = mu;
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for k = 2:40%length(t_samp)
+for k = 2:10%length(t_samp)
     
     % initialize figure
     figure;
-    set(gcf,'Position',[0198 0102 1527 0833]);
+    set(gcf,'Position',[0025 0067 1867 0905]);
     
     %%%%%%%%%% PLOT PREVIOUS (time k-1) POSTERIOR DISTRIBUTION %%%%%%%%%%%%
     % note: particles Xp represent samples from the posterior at time k-1 (previous time step)
@@ -288,14 +289,17 @@ for k = 2:40%length(t_samp)
             
             % compute "CDF" in column 3
             qCDF_all = [Xprior(1,:)',q',q',(1:Np)'];
-            qCDF_all = sortrows(qCDF_all,1,'ascend');
+            if(doSortInSIR)
+                qCDF_all = sortrows(qCDF_all,1,'ascend');
+            end
             qCDF_all(:,3) = cumsum(qCDF_all(:,2));
             
             % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
             % and assemble posterior
             % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
             % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
-            resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), rand(Np,1));
+            uSIR = rand(Np,1);
+            resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), uSIR);
             Xpost = Xprior(:,qCDF_all(resampIdx,4));
             
         case 'Reg'
@@ -311,16 +315,23 @@ for k = 2:40%length(t_samp)
     pStat(k).post.cov = cov;
     Xtraj(:,end+1) = mu;
     
-    % plot prior distribution
+    % phase plane plotting
     subplot(2,3,1);
-    axis equal;
-    plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     
-    % add "ellipse" for prior particle set at this time step (k)
+    % plot prior distribution
+    % and add "ellipse" for prior particle set at this time step (k)
+    plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     [vec,val] = eig(pStat(k).prior.cov);
     plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
     plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
-          
+    
+    % plot posterior distribution after resampling
+    % and add "ellipse" for posterior particle set at this time step (k)
+    plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
+    [vec,val] = eig(pStat(k).post.cov);
+    plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 1]);
+    plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
+            
     % show one period of the DU (deterministic, undamped) phase portrait
     % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
     % this is how our naive model would evolve without observations (and
@@ -342,104 +353,86 @@ for k = 2:40%length(t_samp)
     
     % show estimated state trajectory
     plot(Xtraj(1,:),Xtraj(2,:),'.-','Color',[1 0 1],'LineWidth',2,'MarkerSize',15);
- 
     
+    % set subplot bounds
+    % square here because pendulum length and starting angle were tuned
+    % to produce circular orbit
+    axis equal;
+    xlim([-0.55 0.55]);
+    ylim([-0.55 0.55]);
+
     % plot innovation
     subplot(2,3,2);
-    title('\bf  Observation');
+    title('\bf  Observation Weighting');
     hold on; grid on;
-    plot(r,zeros(size(r)),'b.','MarkerSize',5);
     
-    % functional form of weighting function
-    w_func_domain = -3*sqrt(COV_v):0.0001:3*sqrt(COV_v);
+    % functional form of weighting function (not normalized b/c we
+    % normalize all weights to sum to one later anyway)
+    w_func_domain = -1:0.001:1;
     w_func = exp(-0.5*inv(COV_v)*(w_func_domain.^2));
-    plot(w_func_domain,w_func,'-');
+    plot(w_func_domain,w_func,'-','LineWidth',4,'Color',[0 0.8 0.8]);
     xlabel('\bfInnovation / Residual [m]');
     ylim([0,1.5 ]);
-    
-    mu = mean(Xpost,2);
-    %     x_post = x_prior + ( mean(x_post,2) - mean(x_prior,2)); % use all of the prior particles, just shift them to the "new" centroid based on observation
-    Xprev = Xpost;
-    Np = size(Xpost,2);
+    plot(r,zeros(size(r)),'r.','MarkerSize',20);
+    legend('Obs. Noise (Not Norm.)','Residuals');
     
     
-    % plot posterior distribution after resampling
-    subplot(2,3,1);
-    plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
-     
-    % add "ellipse" for posterior particle set at this time step (k)
-    [vec,val] = eig(pStat(k).post.cov);
-    plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 1]);
-    plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
-          
+
+    % SIR Visualization
+    subplot(2,3,3);
+    hold on; grid on;
+    plot(1:size(qCDF_all,1),qCDF_all(:,3),'LineWidth',4,'Color',[0 0 0.8]);
+    plot(zeros(size(uSIR)),uSIR,'.','MarkerSize',20,'Color',[0 0 0]);
+    plot(resampIdx,zeros(size(resampIdx)),'.','MarkerSize',20,'Color',[0.8 0 0.8]);
+    xlim([0 size(qCDF_all,1)]);
+    ylim([0 1]);
+    legend('CDF of Weighted Particles','U[0,1] Samples','Posterior Particles');
+    if(doSortInSIR)
+        xlabel('\bfParticle ID (Sorted)');
+    else
+        xlabel('\bfParticle ID');
+    end
+    title('\bfSIR via Inverse Transform Sampling');
     
     
     
-    % show bayesian update in 1D
+    % Bayesian update in 1D
     subplot(2,3,4:6);
+    hold on; grid on; 
     x_test = -pi/2:0.0001:pi/2;
+    
+    % PRIOR
+    prior_pdf_ks = ksdensity(Xprior(1,:),x_test,'Kernel','epanechnikov');
+    plot(x_test,prior_pdf_ks,'r-','LineWidth',4);
+    
+    % ACTUAL LIKELIHOOD (can compute this b/c measurement function operates
+    % on just one state variable)
     LH = zeros(size(x_test));  % likelihood function
     for xIdx = 1:length(x_test)
         LH(xIdx) = normpdf( z_samp(k) , sysParams.l*cos( x_test(xIdx) ), sqrt(COV_v)  );
     end
-    hold on; grid on;
-    %     prior_pdf = normpdf( x_test, x_prior_mean_1, x_prior_stdev_1 );
-    prior_pdf_ks = ksdensity(Xprior(1,:),x_test,'Kernel','epanechnikov');
     LH_norm = LH/trapz(x_test,LH);
+    plot(x_test,LH_norm,'b-','LineWidth',4);
+
+    % EXPECTED POSTERIOR
     post_pdf = prior_pdf_ks .* LH;
     post_pdf = post_pdf / trapz(x_test,post_pdf);
-    %     plot(x_true(1)*ones(2,1),[-1 max( [max(LH_norm), max(prior_pdf_ks), max(post_pdf)])],':','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(x_test,prior_pdf_ks,'r-','LineWidth',3.6);
-    plot(x_test,LH_norm,'b-','LineWidth',3.6);
-    %     plot(x_test,post_pdf_est,'m-','LineWidth',1.6);
-    post_pdf_est = prior_pdf_ks.*LH_norm;
-    post_pdf_est = post_pdf_est / trapz(x_test,post_pdf_est);
-    plot(x_test,post_pdf_est,'m-','LineWidth',3.6);
-    
-    % test particle propigation using samples
-    % need to sort so that trapz() works correctly
-    ppdf = [Xprior(1,:)' q'];
-    ppdf = sortrows(ppdf,1,'ascend');
-    ppdf(:,2) = ppdf(:,2)/trapz(ppdf(:,1),ppdf(:,2));
-    %     plot(ppdf(:,1),ppdf(:,2),'k.','MarkerSize',10);
-    
-    % estimate density from the resampled PDF
+    plot(x_test,post_pdf,'-','Color',[1 0.8 1],'LineWidth',4);
+   
+    % POSTERIOR FROM SMOOTHED PARTICLES
     post_rs_ks = ksdensity(Xpost(1,:),x_test,'Kernel','epanechnikov');
-    %     plot(x_test,post_rs_ks,'--','Color',[0 0.8 0],'LineWidth',1.6);
-    xlim(x_true(1)+[-0.1 0.1]);
+    plot(x_test,post_rs_ks,'-','Color',[1 0 1],'LineWidth',2);
+
+    % TRUTH
+    plot(pStat(k).truth(1),0,'^','MarkerSize',10,'Color',[0 0 0],'LineWidth',1.6,'MarkerFaceColor',[0 0.6 0]);
     
     
-    legend('Truth','Prior (Epanechnikov Kernel)','Normalized Likelihood','Posterior','PDF from Particle Weights','Smoothed Posterior Particles','Location','NorthWest');
+    % finish plot
+    xlim([-0.5 0.5]);
+    legend('Prior (Epanechnikov Kernel)','Normalized Likelihood','Expected Posterior','PDF from Particle Weights','Truth','Location','NorthWest');
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfProbability Density');
-    
-    
-    
-    subplot(2,3,3);
-    hold on; grid on;
-    xlim(x_true(1)+[-0.05 0.05]);
-    wpdf = qCDF_all(:,2)/trapz(qCDF_all(:,1),qCDF_all(:,2));
-    intCDF = cumtrapz(qCDF_all(:,1),wpdf);
-    plot(qCDF_all(:,1),wpdf,'r-');
-    plot(qCDF_all(:,1),100*qCDF_all(:,3),'b');
-    plot(qCDF_all(:,1), 100*intCDF,'m-');
-    
-    plot(Xpost(1,:),zeros(size(Xpost)),'m.','MarkerSize',10);
-    x_test = -pi/2:0.0001:pi/2;
-    ppdf = ksdensity(Xpost(1,:),x_test,'Kernel','epanechnikov');
-    plot(x_test,ppdf,'m-');
-    
-    % try again to sample from this pdf
-    samp2 = zeros(1,Np);
-    for i = 1:length(samp2)
-        samp2(i) = qCDF_all( find( rand <= qCDF_all(:,3), 1, 'first'),1);
-    end
-    plot(samp2,zeros(size(samp2)),'c.','MarkerSize',5);
-    ppdf2 = ksdensity(samp2,x_test,'Kernel','epanechnikov');
-    plot(x_test,ppdf2,'C-');
-    
-    %     error('done');
-    
+    title('\bfBayesian Update in 1D');
     
     % display some stats in the console for this timestep
     fprintf('%03d: Prior Mean: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n', ...
@@ -450,9 +443,12 @@ for k = 2:40%length(t_samp)
         pStat(k).truth(2), ...
         z_samp(k) );
     
-    % show current plot now
+    % show plots for timestep k now...
     drawnow;
     
+    
+    % update particle set
+    Xprev = Xpost; 
 end
 
 if(doShowDynamicsPlots)
