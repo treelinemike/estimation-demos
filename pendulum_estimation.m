@@ -11,7 +11,9 @@ rng(4265,'twister');
 doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
-doSortInSIR = 1;    % easier to understand visually if sorted, but not necessary for algorithm to work
+doSortInSIR = 1;       % easier to understand visually if sorted, but not necessary for algorithm to work
+doSaveAssimPlots = 1;
+doMakeVideo = 1;
 
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
@@ -99,8 +101,8 @@ if(doShowDynamicsPlots)
     ax = subplot(2,1,1);
     hold on; grid on;
     plot(time,0*ones(1,length(time)),'k--');
-    ph(end+1) = plot(time,x_DU(1,:),'Color',[0.8 0 0],'LineWidth',1.6);
-    ph(end+1) = plot(time,x_SD(1,:),'Color',[0 0 0.8],'LineWidth',1.6);
+    ph(end+1) = plot(time,x_DU(1,:),'-','Color',[0.3 0.3 0.3],'LineWidth',1.6);
+    ph(end+1) = plot(time,x_SD(1,:),'-','Color',[0 0.6 0],'LineWidth',1.6);
     xlabel('\bfTime [s]');
     ylabel('\bf Angular Position [rad]');
     legend(ph,'Naive Model','Truth','Location','SouthEast');
@@ -108,8 +110,8 @@ if(doShowDynamicsPlots)
     
     ax(end+1) = subplot(2,1,2);
     hold on; grid on;
-    plot(time,z_true,'Color',[0 0 0.8],'LineWidth',1.6);
-    plot(t_samp,z_samp,'.','MarkerSize',20,'Color','m');
+    plot(time,z_true,'Color',[0 0.6 0],'LineWidth',1.6);
+    plot(t_samp,z_samp,'.','MarkerSize',20,'Color',[0 0 0.8]);
     ylabel('\bfObservation');
     legend('Truth','Samples','Location','SouthEast');
     linkaxes(ax,'x');
@@ -122,29 +124,29 @@ end
 % for the estimator
 if(doShowDynamicsPlots)
     figure(resultPlotID);
-    set(gcf,'Position',[0697 0122 0550 0822]);
+    set(gcf,'Position',[0401 0122 0846 0822]);
     ax2 = subplot(3,1,1);
     hold on; grid on;
-    plot(time,x_DU(1,:),'-','LineWidth',1.6,'Color',[0.8 0 0]);
-    plot(time,x_DD(1,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,x_SD(1,:),'-','LineWidth',1.0,'Color',[0 0 0.8]);
-    legend('Deterministic Undamped','Deterministic Damped','Stochastic "Truth"');
+    plot(time,x_DU(1,:),'-','LineWidth',1.6,'Color',[0.3 0.3 0.3]);
+    plot(time,x_DD(1,:),':','LineWidth',2,'Color',[0 0 0]);
+    plot(time,x_SD(1,:),'-','LineWidth',1.0,'Color',[0 0.6 0]);
+    dynLegH = legend('Deterministic Undamped','Deterministic Damped','Stochastic "Truth"');
     title('\bfAngular Position');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad]');
     
     ax2(end+1) = subplot(3,1,2);
     hold on; grid on;
-    plot(time,x_DD(2,:),'-','LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,x_SD(2,:),'-','LineWidth',1.0,'Color',[0 0 0.8]);
+    plot(time,x_DD(2,:),':','LineWidth',1.6,'Color',[0 0 0]);
+    plot(time,x_SD(2,:),'-','LineWidth',1.0,'Color',[0 0.6 0]);
     title('\bfAngular Velocity');
     xlabel('\bfTime [s]');
     ylabel('\bf[rad/s]');
     
     ax2(end+1) = subplot(3,1,3);
     hold on; grid on;
-    plot(time,gradient(x_DD(2,:),time),'LineWidth',1.6,'Color',[0 0.8 0]);
-    plot(time,gradient(x_SD(2,:),time),'-','LineWidth',1.0,'Color',[0 0 0.8]);
+    plot(time,gradient(x_DD(2,:),time),':','LineWidth',2,'Color',[0 0 0]);
+    plot(time,gradient(x_SD(2,:),time),'-','LineWidth',1.0,'Color',[0 0.6 0]);
     % plot(time,gradient(data(6,:),time),'r--','LineWidth',1.6);  % to check computation of acceleration
     title('\bfAcceleration');
     xlabel('\bfTime [s]');
@@ -210,7 +212,7 @@ Xtraj = mu;
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for k = 2:10%length(t_samp)
+for k = 2:length(t_samp)
     
     % initialize figure
     figure;
@@ -218,18 +220,18 @@ for k = 2:10%length(t_samp)
     
     %%%%%%%%%% PLOT PREVIOUS (time k-1) POSTERIOR DISTRIBUTION %%%%%%%%%%%%
     % note: particles Xp represent samples from the posterior at time k-1 (previous time step)
-    subplot(2,3,1);
+    subplot(2,3,2);
     hold on; grid on;
     title('\bfEvolution in State Space');
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfx_2: Angular Velocity [rad/s]');
     plot(Xprev(1,:),Xprev(2,:),'.','MarkerSize',5,'Color',[0.6 .6 .6]);
-   
+    
     % add "ellipse" for previous particle set
     [vec,val] = eig(pStat(k-1).post.cov);
     endpts = vec*sqrt(val);
-%     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
-%     plot(pStat(k-1).post.mean(1)+[-endpts(2,1) endpts(2,1)],pStat(k-1).post.mean(2)+[-endpts(2,2) endpts(2,2)],'k-','LineWidth',2);
+    %     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
+    %     plot(pStat(k-1).post.mean(1)+[-endpts(2,1) endpts(2,1)],pStat(k-1).post.mean(2)+[-endpts(2,2) endpts(2,2)],'k-','LineWidth',2);
     plot(pStat(k-1).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k-1).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[0 0 0]);
     plot(pStat(k-1).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k-1).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[0 0 0]);
     
@@ -270,7 +272,7 @@ for k = 2:10%length(t_samp)
     pStat(k).prior.mean = mu;
     pStat(k).prior.cov  = cov;
     pStat(k).truth = x_SD_samp(:,k);
-      
+    
     % check covariance calculation
     % standard deviation of particle positions (first state element)
     % should be within 1% of the value calculated with MATLAB std() function
@@ -281,7 +283,7 @@ for k = 2:10%length(t_samp)
     
     % resample the prior particles using likelihood from
     % data and data noise model to produce the posterior particle set
-    switch(resamplingMethod)     
+    switch(resamplingMethod)
         case 'SIR'
             
             % Sampling/Importance Resampling
@@ -302,6 +304,22 @@ for k = 2:10%length(t_samp)
             resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), uSIR);
             Xpost = Xprior(:,qCDF_all(resampIdx,4));
             
+            % SIR Visualization
+            subplot(2,3,6);
+            hold on; grid on;
+            plot(1:size(qCDF_all,1),qCDF_all(:,3),'LineWidth',4,'Color',[0 0 0.8]);
+            plot(zeros(size(uSIR)),uSIR,'.','MarkerSize',20,'Color',[0 0 0]);
+            plot(resampIdx,zeros(size(resampIdx)),'.','MarkerSize',20,'Color',[0.8 0 0.8]);
+            xlim([0 size(qCDF_all,1)]);
+            ylim([0 1]);
+            legend('CDF of Weighted Particles','U[0,1] Samples','Posterior Particles');
+            if(doSortInSIR)
+                xlabel('\bfParticle ID (Sorted)');
+            else
+                xlabel('\bfParticle ID');
+            end
+            title('\bfSIR via Inverse Transform Sampling');
+            
         case 'Reg'
             % Regularization
             
@@ -316,7 +334,7 @@ for k = 2:10%length(t_samp)
     Xtraj(:,end+1) = mu;
     
     % phase plane plotting
-    subplot(2,3,1);
+    subplot(2,3,2);
     
     % plot prior distribution
     % and add "ellipse" for prior particle set at this time step (k)
@@ -331,7 +349,7 @@ for k = 2:10%length(t_samp)
     [vec,val] = eig(pStat(k).post.cov);
     plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 1]);
     plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
-            
+    
     % show one period of the DU (deterministic, undamped) phase portrait
     % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
     % this is how our naive model would evolve without observations (and
@@ -341,15 +359,17 @@ for k = 2:10%length(t_samp)
     [~,onePerIdx] = max( x_DU(1,lowerBoundIdx:upperBoundIdx) );
     onePerIdx = onePerIdx + lowerBoundIdx;
     onePerSampIdx = find( t_samp <= time(onePerIdx),1,'last');
-    plot(x_DU(1,1:onePerIdx),x_DU(2,1:onePerIdx),'--','Color',[0.8 0 0],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
-    plot(x_DU_samp(1,1:onePerSampIdx),x_DU_samp(2,1:onePerSampIdx),'.','Color',[0.8 0 0],'MarkerSize',15); % assumed model trajectory in state space (deterministic, no damping)
+    plot(x_DU(1,1:onePerIdx),x_DU(2,1:onePerIdx),'--','Color',[0.3 0.3 0.3],'LineWidth',1); % assumed model trajectory in state space (deterministic, no damping)
+    plot(x_DU_samp(1,1:onePerSampIdx),x_DU_samp(2,1:onePerSampIdx),'.','Color',[0.3 0.3 0.3],'MarkerSize',15); % assumed model trajectory in state space (deterministic, no damping)
+    plot(x_DU_samp(1,k-1),x_DU_samp(2,k-1),'o','MarkerSize',10,'Color',[0.3 0.3 0.3],'LineWidth',3);
+    plot(x_DU_samp(1,k),x_DU_samp(2,k),'o','MarkerSize',10,'Color',[0.3 0.3 0.3],'LineWidth',3);
     
     % show true system phase portrait (SD: stochastic, damped)
     % and highlight true states at previous (k-1) and current (k) time steps
-    plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0 0.8],'LineWidth',1); % true trajectory in state space
-    plot(x_SD_samp(1,:),x_SD_samp(2,:),'.','Color',[0 0 0.8],'MarkerSize',15);
-    plot(pStat(k-1).truth(1),pStat(k-1).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
-    plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0 0.8],'LineWidth',3);
+    plot(x_SD(1,:),x_SD(2,:),'-','Color',[0 0.6 0],'LineWidth',1); % true trajectory in state space
+    plot(x_SD_samp(1,:),x_SD_samp(2,:),'.','Color',[0 0.6 0],'MarkerSize',15);
+    plot(pStat(k-1).truth(1),pStat(k-1).truth(2),'o','MarkerSize',10,'Color',[0 0.6 0],'LineWidth',3);
+    plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0.6 0],'LineWidth',3);
     
     % show estimated state trajectory
     plot(Xtraj(1,:),Xtraj(2,:),'.-','Color',[1 0 1],'LineWidth',2,'MarkerSize',15);
@@ -358,11 +378,11 @@ for k = 2:10%length(t_samp)
     % square here because pendulum length and starting angle were tuned
     % to produce circular orbit
     axis equal;
-    xlim([-0.55 0.55]);
-    ylim([-0.55 0.55]);
-
+%     xlim([-0.55 0.55]);
+    ylim([-0.55 0.50]);
+    
     % plot innovation
-    subplot(2,3,2);
+    subplot(2,3,3);
     title('\bf  Observation Weighting');
     hold on; grid on;
     
@@ -377,28 +397,14 @@ for k = 2:10%length(t_samp)
     legend('Obs. Noise (Not Norm.)','Residuals');
     
     
-
-    % SIR Visualization
-    subplot(2,3,3);
-    hold on; grid on;
-    plot(1:size(qCDF_all,1),qCDF_all(:,3),'LineWidth',4,'Color',[0 0 0.8]);
-    plot(zeros(size(uSIR)),uSIR,'.','MarkerSize',20,'Color',[0 0 0]);
-    plot(resampIdx,zeros(size(resampIdx)),'.','MarkerSize',20,'Color',[0.8 0 0.8]);
-    xlim([0 size(qCDF_all,1)]);
-    ylim([0 1]);
-    legend('CDF of Weighted Particles','U[0,1] Samples','Posterior Particles');
-    if(doSortInSIR)
-        xlabel('\bfParticle ID (Sorted)');
-    else
-        xlabel('\bfParticle ID');
-    end
-    title('\bfSIR via Inverse Transform Sampling');
+    
+    
     
     
     
     % Bayesian update in 1D
-    subplot(2,3,4:6);
-    hold on; grid on; 
+    subplot(2,3,4:5);
+    hold on; grid on;
     x_test = -pi/2:0.0001:pi/2;
     
     % PRIOR
@@ -413,26 +419,67 @@ for k = 2:10%length(t_samp)
     end
     LH_norm = LH/trapz(x_test,LH);
     plot(x_test,LH_norm,'b-','LineWidth',4);
-
+    
     % EXPECTED POSTERIOR
     post_pdf = prior_pdf_ks .* LH;
     post_pdf = post_pdf / trapz(x_test,post_pdf);
     plot(x_test,post_pdf,'-','Color',[1 0.8 1],'LineWidth',4);
-   
+    
     % POSTERIOR FROM SMOOTHED PARTICLES
     post_rs_ks = ksdensity(Xpost(1,:),x_test,'Kernel','epanechnikov');
     plot(x_test,post_rs_ks,'-','Color',[1 0 1],'LineWidth',2);
-
+    
     % TRUTH
     plot(pStat(k).truth(1),0,'^','MarkerSize',10,'Color',[0 0 0],'LineWidth',1.6,'MarkerFaceColor',[0 0.6 0]);
     
     
     % finish plot
     xlim([-0.5 0.5]);
+    ylim([0 85]);
     legend('Prior (Epanechnikov Kernel)','Normalized Likelihood','Expected Posterior','PDF from Particle Weights','Truth','Location','NorthWest');
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfProbability Density');
     title('\bfBayesian Update in 1D');
+    
+
+    
+    % show pendulum
+    subplot(2,3,1);
+    hold on; grid on;
+    axis equal;
+    xlabel('\bfX');
+    ylabel('\bfY');
+    title('\bfPendulum & Observation');
+    xlim(sysParams.l*[-1 1]);
+    ylim([-1.2*sysParams.l 2]);
+    bobXY = sysParams.l*[sin(pStat(k).truth(1)); -cos(pStat(k).truth(1))];
+    plot(0,0,'k.','MarkerSize',30);
+    plot([0 bobXY(1)],[0 bobXY(2)],'k-','LineWidth',6);
+    plot(bobXY(1),bobXY(2),'o','MarkerSize',30,'LineWidth',6,'MarkerFaceColor',[1 1 1],'Color',[0 0 0]);
+    thisXLim = xlim;
+    plot([-7.1 bobXY(1)],bobXY(2)*ones(1,2),':','Color',[0 0.6 0],'LineWidth',2);
+    plot(bobXY(1),bobXY(2),'.','MarkerSize',20,'Color',[0 0.6 0]);
+    
+    pendPH = plot(-7.1,bobXY(2),'<','MarkerSize',15,'Color',[0 0.6 0],'MarkerFaceColor',[0 0.6 0]);
+    pendPH(end+1) = plot(-8.5,-z_samp(k),'>','MarkerSize',15,'Color',[0 0 0.8],'MarkerFaceColor',[0 0 0.8]);
+    pendSTR = {'Truth','Observation'};
+    plot([-20 -8.5],-z_samp(k)*ones(1,2),':','LineWidth',2,'Color',[0 0 0.8]);
+    
+    if( abs(bobXY(2)) > abs(z_samp(k)))
+        pendPH = fliplr(pendPH);
+        pendSTR = fliplr(pendSTR);
+    end
+    legend(pendPH,pendSTR);
+     
+     
+    % show plots for timestep k now and save if desired...
+    drawnow;
+    if(doSaveAssimPlots)
+        thisImgFile = sprintf('frame%03d.png',k);
+        saveas(gcf,thisImgFile);
+        system(['convert -trim ' thisImgFile ' ' thisImgFile]);  % REQUIRES convert FROM IMAGEMAGICK!
+    end
+    
     
     % display some stats in the console for this timestep
     fprintf('%03d: Prior Mean: (%8.4f,%8.4f); Truth: (%8.4f,%8.4f); Observation: %8.4d\n', ...
@@ -443,21 +490,24 @@ for k = 2:10%length(t_samp)
         pStat(k).truth(2), ...
         z_samp(k) );
     
-    % show plots for timestep k now...
-    drawnow;
-    
-    
     % update particle set
-    Xprev = Xpost; 
+    Xprev = Xpost;
 end
 
 if(doShowDynamicsPlots)
     figure(resultPlotID);
     subplot(3,1,1);
     plot(t_samp(1:size(Xtraj,2)),Xtraj(1,:),'m-','LineWidth',2)
+    dynLegH.String{end} = 'Particle Filter Estimate'
     subplot(3,1,2);
     plot(t_samp(1:size(Xtraj,2)),Xtraj(2,:),'m-','LineWidth',2)
 end
+
+if(doSaveAssimPlots & doMakeVideo)
+    system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');
+    %             system('del frame*.png');
+end
+
 
 % function to compute the mean and covariance of a particle set
 % Xp is Ns rows (# states), and Np (# particles) columns
