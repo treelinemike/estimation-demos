@@ -216,7 +216,7 @@ for k = 2:length(t_samp)
     
     % initialize figure
     figure;
-    set(gcf,'Position',[0025 0067 1867 0905]);
+    set(gcf,'Position',[0025 0067 1776 0905]);
     
     %%%%%%%%%% PLOT PREVIOUS (time k-1) POSTERIOR DISTRIBUTION %%%%%%%%%%%%
     % note: particles Xp represent samples from the posterior at time k-1 (previous time step)
@@ -378,7 +378,7 @@ for k = 2:length(t_samp)
     % square here because pendulum length and starting angle were tuned
     % to produce circular orbit
     axis equal;
-%     xlim([-0.55 0.55]);
+    xlim([-0.65 0.65]);
     ylim([-0.55 0.50]);
     
     % plot innovation
