@@ -12,8 +12,8 @@ doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
 doSortInSIR = 1;       % easier to understand visually if sorted, but not necessary for algorithm to work
-doSaveAssimPlots = 1;
-doMakeVideo = 1;
+doSaveAssimPlots = 0;
+doMakeVideo = 0;
 
 % simulation time parameters
 t0 = 0;        % [s] simulation start time
@@ -112,6 +112,7 @@ if(doShowDynamicsPlots)
     hold on; grid on;
     plot(time,z_true,'Color',[0 0.6 0],'LineWidth',1.6);
     plot(t_samp,z_samp,'.','MarkerSize',20,'Color',[0 0 0.8]);
+    xlabel('\bfTime [s]');
     ylabel('\bfObservation');
     legend('Truth','Samples','Location','SouthEast');
     linkaxes(ax,'x');
