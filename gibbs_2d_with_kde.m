@@ -8,9 +8,10 @@ close all; clear; clc;
 rng('default');
 
 % options
-Nsteps = 10;
-doShowSteps = 0;
+Nsteps = 1;
+doShowSteps = 1;
 doAnimate = 0;
+doMakeVideo = 0;
 Np = 2000;         % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
@@ -126,6 +127,7 @@ for gibbsIter = 1:Nsteps
             legend('Emperical Density','True Density','Samples','Chosen Sample');
         end
         
+        
     end
     
     % store new point in markov chain after moving in each direction
@@ -137,9 +139,21 @@ for gibbsIter = 1:Nsteps
         plot(x(1),x(2),'k.','MarkerSize',10);
         plot(x(1),x(2),'ko','MarkerSize',10,'LineWidth',2.0);
         plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
-        pause(0.1);
+        
+        if(doMakeVideo)
+            thisImgFile = sprintf('frame%03d.png',gibbsIter);
+            saveas(gcf,thisImgFile);
+            system(['convert -trim ' thisImgFile ' ' thisImgFile]);  % REQUIRES convert FROM IMAGEMAGICK!
+        else
+            pause(0.1);
+        end
     end
     
+end
+
+if(doMakeVideo)
+    system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');
+    %             system('del frame*.png');
 end
 
 % show all points in the markov chain
@@ -148,3 +162,5 @@ subplot(1,2,2);
 plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
 plot(x_hist(1,:),x_hist(2,:),'k.','MarkerSize',10);
 plot(x_hist(1,:),x_hist(2,:),'ko','MarkerSize',10,'LineWidth',2.0);
+
+
