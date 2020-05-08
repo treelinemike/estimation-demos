@@ -29,7 +29,7 @@ Np = 2000;                                    % number of particles
 COV_0 = [(1*pi/180)^2 0; 0 (3*pi/180)^2];     % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
 COV_w_true = [(0.012*pi/180)^2 0; 0 (0.017*pi/180)^2];        % true state propagation covariance
 COV_w = [(0.25*pi/180)^2 0; 0 (0.1*pi/180)^2]; % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
-resamplingMethod = 'SIR';                     % 'SIR', 'Reg'
+resamplingMethod = 'Reg';                     % 'SIR', 'Reg'
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -282,28 +282,33 @@ for k = 2:length(t_samp)
     % normalize weights to sum to 1.0
     q = w ./sum(w);
     
+    % Sampling/Importance Resampling
+    % a.k.a. Sequential Importance Resampling
+    % run this every time b/c in the REGULARIZATION
+    % case we will use the SIR result to choose a region of state space
+    
+    % compute "CDF" in column 3
+    qCDF_all = [Xprior(1,:)',q',q',(1:Np)'];
+    if(doSortInSIR)
+        qCDF_all = sortrows(qCDF_all,1,'ascend');
+    end
+    qCDF_all(:,3) = cumsum(qCDF_all(:,2));
+    
+    % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
+    % and assemble posterior
+    % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
+    % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
+    uSIR = rand(Np,1);
+    resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), uSIR);
+    X_SIR = Xprior(:,qCDF_all(resampIdx,4));
+    
     % resample the prior particles using likelihood from
     % data and data noise model to produce the posterior particle set
     switch(resamplingMethod)
         case 'SIR'
-            
-            % Sampling/Importance Resampling
-            % a.k.a. Sequential Importance Resampling
-            
-            % compute "CDF" in column 3
-            qCDF_all = [Xprior(1,:)',q',q',(1:Np)'];
-            if(doSortInSIR)
-                qCDF_all = sortrows(qCDF_all,1,'ascend');
-            end
-            qCDF_all(:,3) = cumsum(qCDF_all(:,2));
-            
-            % sample from CDF (uses "inverse transform sampling" / "universality of the uniform" to generate samples)
-            % and assemble posterior
-            % DO NOT USE UNIQUE TO THIN PARTICLES HERE!!!! THIS RESULTS IN THE
-            % WRONG PDF!!! WE WILL HAVE DUPLICATE PARTICLES.
-            uSIR = rand(Np,1);
-            resampIdx = arrayfun(@(afin1) find( afin1 <= qCDF_all(:,3),1,'first'), uSIR);
-            Xpost = Xprior(:,qCDF_all(resampIdx,4));
+    
+            % set posterior particle set
+            Xpost = X_SIR;
             
             % SIR Visualization
             subplot(2,3,6);
@@ -324,6 +329,39 @@ for k = 2:length(t_samp)
         case 'Reg'
             % Regularization
             
+            % need to choose some region of state space to populate, and distribute query points in it
+            % for now use the eigenvector space of the SIR posterior
+            [mu,cov] = getPStats(X_SIR);
+            [vec,val] = eig(cov);
+            h_reg = 0.005;
+            K_reg = 6;
+            [XQ_XX,XQ_YY] = meshgrid(-K_reg*sqrt(val(1,1)):h_reg:K_reg*sqrt(val(1,1)), -K_reg*sqrt(val(2,2)):h_reg:K_reg*sqrt(val(2,2)));
+            XQ_reg = [XQ_XX(:)';XQ_YY(:)'];
+            XQ_reg = vec*XQ_reg + mu;
+            XQ_XX_reg = reshape(XQ_reg(1,:),size(XQ_XX,1),size(XQ_XX,2));
+            XQ_YY_reg = reshape(XQ_reg(2,:),size(XQ_XX,1),size(XQ_XX,2));
+            
+            
+            subplot(2,3,6);
+            hold on; grid on;
+            axis equal;
+            xlim(pStat(k).truth(1)+[-0.3 0.3]);
+            ylim(pStat(k).truth(2)+[-0.3 0.3]);
+            title('\bfRegularization');
+            % show prior
+            plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
+            plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
+            plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
+            
+            % show truth
+            plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0.6 0],'LineWidth',3);
+            
+            % smooth prior particle set using q_i weights on Epanechnikov kernels
+            ks_pdf = part2pdf( Xprior, q, XQ_reg, 2.0);
+            contour(XQ_XX_reg,XQ_YY_reg,reshape(ks_pdf,size(XQ_XX,1),size(XQ_XX,2)))
+            
+            Xpost = X_SIR;
+           
         otherwise
             error('Invalid resampling method!');
     end
