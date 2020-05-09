@@ -230,6 +230,10 @@ for k = 2:length(t_samp)
     
     % add "ellipse" for previous particle set
     [vec,val] = eig(pStat(k-1).post.cov);
+    vec = vec*diag(sign(diag(vec)));
+    if(det(vec) < 0)
+        error('Negative determinant of eigenvector matrix!');
+    end
     endpts = vec*sqrt(val);
     %     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
     %     plot(pStat(k-1).post.mean(1)+[-endpts(2,1) endpts(2,1)],pStat(k-1).post.mean(2)+[-endpts(2,2) endpts(2,2)],'k-','LineWidth',2);
@@ -306,7 +310,7 @@ for k = 2:length(t_samp)
     % data and data noise model to produce the posterior particle set
     switch(resamplingMethod)
         case 'SIR'
-    
+            
             % set posterior particle set
             Xpost = X_SIR;
             
@@ -333,6 +337,10 @@ for k = 2:length(t_samp)
             % for now use the eigenvector space of the SIR posterior
             [mu,cov] = getPStats(X_SIR);
             [vec,val] = eig(cov);
+            vec = vec*diag(sign(diag(vec)));
+            if(det(vec) < 0)
+                error('Negative determinant of eigenvector matrix!');
+            end
             h_reg = 0.005;
             K_reg = 6;
             [XQ_XX,XQ_YY] = meshgrid(-K_reg*sqrt(val(1,1)):h_reg:K_reg*sqrt(val(1,1)), -K_reg*sqrt(val(2,2)):h_reg:K_reg*sqrt(val(2,2)));
@@ -361,7 +369,7 @@ for k = 2:length(t_samp)
             contour(XQ_XX_reg,XQ_YY_reg,reshape(ks_pdf,size(XQ_XX,1),size(XQ_XX,2)))
             
             Xpost = X_SIR;
-           
+            
         otherwise
             error('Invalid resampling method!');
     end
@@ -379,6 +387,10 @@ for k = 2:length(t_samp)
     % and add "ellipse" for prior particle set at this time step (k)
     plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     [vec,val] = eig(pStat(k).prior.cov);
+    vec = vec*diag(sign(diag(vec)));
+    if(det(vec) < 0)
+        error('Negative determinant of eigenvector matrix!');
+    end
     plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 0]);
     plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
     
@@ -386,6 +398,10 @@ for k = 2:length(t_samp)
     % and add "ellipse" for posterior particle set at this time step (k)
     plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
     [vec,val] = eig(pStat(k).post.cov);
+    vec = vec*diag(sign(diag(vec)));
+    if(det(vec) < 0)
+        error('Negative determinant of eigenvector matrix!');
+    end
     plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 1]);
     plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
     
@@ -480,7 +496,7 @@ for k = 2:length(t_samp)
     ylabel('\bfProbability Density');
     title('\bfBayesian Update in 1D');
     
-
+    
     
     % show pendulum
     subplot(2,3,1);
@@ -509,8 +525,8 @@ for k = 2:length(t_samp)
         pendSTR = fliplr(pendSTR);
     end
     legend(pendPH,pendSTR);
-     
-     
+    
+    
     % show plots for timestep k now and save if desired...
     drawnow;
     if(doSaveAssimPlots)
