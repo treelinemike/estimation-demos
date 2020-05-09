@@ -233,8 +233,8 @@ for k = 2:length(t_samp)
     endpts = vec*sqrt(val);
     %     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
     %     plot(pStat(k-1).post.mean(1)+[-endpts(2,1) endpts(2,1)],pStat(k-1).post.mean(2)+[-endpts(2,2) endpts(2,2)],'k-','LineWidth',2);
-    plot(pStat(k-1).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k-1).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[0 0 0]);
-    plot(pStat(k-1).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k-1).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[0 0 0]);
+    plot(pStat(k-1).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k-1).post.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[0 0 0]);
+    plot(pStat(k-1).post.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k-1).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[0 0 0]);
     
     
     %%%%%%%%%% MOVE TO CURRENT TIME STEP (k) %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -350,8 +350,8 @@ for k = 2:length(t_samp)
             title('\bfRegularization');
             % show prior
             plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
-            plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
-            plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
+            plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 0]);
+            plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
             
             % show truth
             plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0.6 0],'LineWidth',3);
@@ -379,15 +379,15 @@ for k = 2:length(t_samp)
     % and add "ellipse" for prior particle set at this time step (k)
     plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     [vec,val] = eig(pStat(k).prior.cov);
-    plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 0]);
-    plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
+    plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 0]);
+    plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
     
     % plot posterior distribution after resampling
     % and add "ellipse" for posterior particle set at this time step (k)
     plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
     [vec,val] = eig(pStat(k).post.cov);
-    plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(1,2) vec(1,2)],'-','LineWidth',2,'Color',[1 0 1]);
-    plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(2,1) vec(2,1)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
+    plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 1]);
+    plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
     
     % show one period of the DU (deterministic, undamped) phase portrait
     % (only one period b/c Fwd Euler inaccuracy makes oscillations grow)
