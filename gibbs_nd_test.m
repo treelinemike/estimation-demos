@@ -40,12 +40,13 @@ if(det(vec) < 0)
     error('Negative determinant of eigenvector matrix!');
 end
 
-
 % assemble query point vectors for each eigen-direction
 xq_vec = [];
+dimLengths = [];
 for dimIdx = 1:nDim
     sd = sqrt( val(dimIdx,dimIdx));
     xq_vec{dimIdx} = -NSD*sd:hss:NSD*sd;
+    dimLengths(dimIdx) = length(xq_vec{dimIdx});
 end
 
 % xq_vec = {};
@@ -111,39 +112,21 @@ plot(x0(1),x0(2),'.','Color',[0 0.8 0],'MarkerSize',20);
 % xq_vec{1} = 1:3;
 % xq_vec{2} = 1:4;
 % xq_vec{3} = 1:3;
-dimLengths = [];
-for dimIdx = 1:length(xq_vec)
-    dimLengths(dimIdx) = length(xq_vec{dimIdx});
-end
-dimSizes = [1 cumprod(dimLengths(1:end-1))];
+% x0Idx = 6
+subscripts = ndind2sub(dimLengths,x0Idx)
+% [s1,s2,s3] = ind2sub(dimLengths,x0Idx)
 
-% runningIdx = 29;
-runningIdx = x0Idx;
-subscripts = zeros(1,length(xq_vec));
-for dimIdx = length(xq_vec):-1:1
-    prevLayerSize = dimSizes(dimIdx); %prod(dimLengths(1:(dimIdx-1)));
-    thisIdx = ceil( runningIdx / prevLayerSize );
-    subscripts(dimIdx) = thisIdx;
-    runningIdx = runningIdx - (thisIdx-1)*prevLayerSize;
-end
-subscripts
+
 
 % extract points along dimension 1
-dimToExtract = 1;
+dimToExtract = 2;
 pointSubscripts = repmat(subscripts,length(xq_vec{dimToExtract}),1);
-pointSubscripts(:,dimToExtract) = [1:length(xq_vec{dimToExtract})]';
-pointIdxAlongDim = zeros(1,length(xq_vec{dimToExtract}));
+pointSubscripts(:,dimToExtract) = (1:length(xq_vec{dimToExtract}))';
 
-for pointNum = 1:size(pointSubscripts,1)
-   pointIdx = 1;
-   for dimIdx = 1:length(xq_vec)
-      pointIdx = pointIdx + dimSizes(dimIdx)*(pointSubscripts(pointNum,dimIdx)-1); 
-   end
-   pointIdxAlongDim(pointNum) = pointIdx;
-end
+ind = ndsub2ind(dimLengths,pointSubscripts)
+% ind2 = sub2ind(dimLengths,pointSubscripts(:,1),pointSubscripts(:,2),pointSubscripts(:,3))
 
-pointIdxAlongDim
-pointsAlongDim = xq_cp(:,pointIdxAlongDim);
+pointsAlongDim = xq_cp(:,ind);
 distAlongDim = pointsAlongDim - pointsAlongDim(:,1);
 distAlongDim = vecnorm(distAlongDim,2,1);
 
@@ -153,14 +136,11 @@ plot(pointsAlongDim(1,:),pointsAlongDim(2,:),'k.','MarkerSize',5);
 
 figure;
 hold on; grid on;
-normFactor = trapz(distAlongDim,ks_pdf(pointIdxAlongDim));
-pdf = ks_pdf(pointIdxAlongDim)/normFactor;
+normFactor = trapz(distAlongDim,ks_pdf(ind));
+pdf = ks_pdf(ind)/normFactor;
 cdf = cumtrapz(distAlongDim,pdf);
 plot(distAlongDim,pdf,'b');
 plot(distAlongDim,cdf,'r');
-
-
-
 
 figure;
 
@@ -278,5 +258,34 @@ function p = cartprod(c)
     p = cell(size(c));
     [p{:}] = ndgrid(c{:});
     p = cell2mat(cellfun(@(x) x(:), p, 'UniformOutput', false));
+end
+
+% index to subscripts in n-dimensions
+% without needing to specifcy dimensionality explicitly for output args
+function sub = ndind2sub(dimLengths,ind)
+dimSizes = [1 cumprod(dimLengths(1:end-1))];
+sub = zeros(1,length(dimLengths));
+for dimIdx = length(dimLengths):-1:1
+    thisIdx = ceil( ind / dimSizes(dimIdx) );
+    sub(dimIdx) = thisIdx;
+    ind = ind - (thisIdx-1)*dimSizes(dimIdx);
+end
+end
+
+% subscripts to index in n-dimensions
+% without needing to specify dimensionality via separate arguments
+% sub = matrix with #col = #dim; #row = #points to evaluate
+% ind = vector length = (#row of sub) with indices of each query point 
+function ind = ndsub2ind(dimLengths,sub)
+dimSizes = [1 cumprod(dimLengths(1:end-1))];
+ind = zeros(1,length(dimLengths));
+
+for pointNum = 1:size(sub,1)
+   pointIdx = 1;
+   for dimIdx = 1:length(dimLengths)
+      pointIdx = pointIdx + dimSizes(dimIdx)*(sub(pointNum,dimIdx)-1); 
+   end
+   ind(pointNum) = pointIdx;
+end
 end
 
