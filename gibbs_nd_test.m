@@ -12,7 +12,7 @@ doOneStepOnly = 0;
 doShowSteps = 0;
 doAnimate = 0;
 doMakeVideo = 0;
-Np = 2000;         % number of particles to sample from the true PDF
+Np = 200;         % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
 mainFigIdx = 1;
@@ -29,13 +29,15 @@ corr = 0.8;
 cov_true = [sigma_1^2 corr*sigma_1*sigma_2; corr*sigma_1*sigma_2 sigma_2^2];
 
 % sample from the true PDF
-x_samp = mvnrnd(mu_true',cov_true,Np)';
+x_samp_pre = mvnrnd(mu_true',cov_true,Np)';
 
 % state space to explore (i.e. query points)
 NSD = 4;  % number of standard deviations to extend (+/-) in each dimension from mean
-nDim = size(x_samp,1);
-mu = mean(x_samp,2);
-cov = 1/(size(x_samp,2)-1)*(x_samp-mu)*(x_samp-mu)';
+nDim = size(x_samp_pre,1);
+
+% principal axes of initial particle set
+mu = mean(x_samp_pre,2);
+cov = 1/(size(x_samp_pre,2)-1)*(x_samp_pre-mu)*(x_samp_pre-mu)';
 [vec,val] = eig(cov);
 % choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
 % standard basis
@@ -53,12 +55,6 @@ for dimIdx = 1:nDim
     xq_vec{dimIdx} = -NSD*sd:hss:NSD*sd;
     dimLengths(dimIdx) = length(xq_vec{dimIdx});
 end
-
-% xq_vec = {};
-% for dimIdx = 1:size(x_samp,1)
-%     dimSpan = max(x_samp(dimIdx,:))-min(x_samp(dimIdx,:));
-%     xq_vec{dimIdx} = (min(x_samp(dimIdx,:))-(Kss*dimSpan)):hss:(max(x_samp(dimIdx,:))+(Kss*dimSpan));
-% end
 xq_cp_raw = cartprod(xq_vec)';
 xq_cp = mu + vec*xq_cp_raw; % now in EIGENSPACE! .. call to cartprod() is fast
 
@@ -67,7 +63,6 @@ xq_cp = mu + vec*xq_cp_raw; % now in EIGENSPACE! .. call to cartprod() is fast
 % https://www.mathworks.com/matlabcentral/answers/99720-what-is-the-difference-between-the-ndgrid-and-meshgrid-functions-in-matlab
 % [XX,YY] = meshgrid(xq_vec{1},xq_vec{2});
 % xq_diff = xq_cp(:,1)-XX(:)
-
 
 % generate PDF at query points
 % [X1Q,X2Q] = meshgrid(xq_vec{1},xq_vec{2});
@@ -85,15 +80,19 @@ ax = subplot(1,2,1);
 title('\bfTrue Density with Samples');
 hold on; grid on;
 axis equal;
-plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
-contour(X1Q,X2Q,PDF_disp,'LineWidth',1.6);
-plot(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 1]);
-plot(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
+surf(X1Q,X2Q,PDF_disp,'EdgeColor','none','FaceAlpha',0.7);
+plot3(x_samp_pre(1,:),x_samp_pre(2,:),ones(size(x_samp_pre,2)),'.','MarkerSize',4,'Color',[ 0 0 0 ]);
+plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+
+cmap = colormap;
+set(gca,'Color',cmap(1,:));
+set(gca,'GridAlpha',0.6);
 % plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
 
 % apply kernel density smoother to samples
-q_samp = ones(1,size(x_samp,2))/size(x_samp,2);
-ks_pdf = part2pdf( x_samp, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow!
+q_samp = ones(1,size(x_samp_pre,2))/size(x_samp_pre,2);
+ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow!
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
@@ -103,13 +102,16 @@ linkaxes(ax,'xy');
 hold on; grid on;
 axis equal;
 % plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
-contour(X1Q,X2Q,KS_pdf,'LineWidth',1.6);
+surf(X1Q,X2Q,KS_pdf,'EdgeColor','none','FaceAlpha',0.7);
 % plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
+cmap = colormap;
+set(gca,'Color',cmap(1,:));
+set(gca,'GridAlpha',0.6);
 
 % start sampler at random query point
 x0Idx = randi(size(xq_cp,2));
 x0 = xq_cp(:,x0Idx);
-plot(x0(1),x0(2),'.','Color',[0 0.8 0],'MarkerSize',20);
+% plot(x1(1),x0(2),'.','Color',[0 0.8 0],'MarkerSize',20);
 
 % compute number of steps to take
 if(doOneStepOnly)
@@ -127,8 +129,8 @@ xIdx_hist = NaN(1,Nsteps+1);
 xIdx_hist(1) = x0Idx;
 
 % show starting point
-plot(x0(1),x0(2),'k.','MarkerSize',10);
-plot(x0(1),x0(2),'ko','MarkerSize',10,'LineWidth',2.0);
+% plot(x0(1),x0(2),'k.','MarkerSize',10);
+% plot(x0(1),x0(2),'ko','MarkerSize',10,'LineWidth',2.0);
 
 % iterate sampler
 for gibbsIter = 1:Nsteps
@@ -187,7 +189,7 @@ for gibbsIter = 1:Nsteps
     
     % show result of this iteration if requested
     if(doAnimate)
-        figure(1);
+        figure(mainFigIdx);
         plot(x(1),x(2),'k.','MarkerSize',10);
         plot(x(1),x(2),'ko','MarkerSize',10,'LineWidth',2.0);
         plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
@@ -210,13 +212,28 @@ end
 
 % show selected points from the markov chain
 pointIdx = (gibbsBurnIn+1):gibbsM:Nsteps;
-sampledPoints = x_hist(:,pointIdx);
-figure(1);
-subplot(1,2,2);
-% plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
-% plot(x_hist(1,:),x_hist(2,:),'k.','MarkerSize',10);
-% plot(x_hist(1,:),x_hist(2,:),'ko','MarkerSize',10,'LineWidth',2.0);
-plot(sampledPoints(1,:),sampledPoints(2,:),'.','MarkerSize',5,'Color',[0 0 0.8]);
+x_samp_post = x_hist(:,pointIdx);
+% figure(mainFigIdx);
+% subplot(1,2,2);
+% hold on; grid on;
+plot3(x_samp_post(1,:),x_samp_post(2,:),ones(size(x_samp_post,2)),'.','MarkerSize',4,'Color',[ 0 0 0 ]);
+
+% principal axes of regularized particle set
+mu = mean(x_samp_post,2);
+    cov = 1/(size(x_samp_post,2)-1)*(x_samp_post-mu)*(x_samp_post-mu)';
+[vec,val] = eig(cov);
+% choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
+% standard basis
+% TODO: may need to further test and refine this!
+vec = vec*diag(sign(diag(vec)));
+if(det(vec) < 0)
+    error('Negative determinant of eigenvector matrix!');
+end
+
+% plot principal axes of regularized particle set
+% plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+% plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+% TODO: WHY DOES ADDING THE ABOVE LINES MAKE THE SURF() GO AWAY???
 
 % from Guillaume on Matlab Centeral Answers:
 % https://www.mathworks.com/matlabcentral/answers/332718-can-i-store-multiple-outputs-of-a-function-into-a-cell
