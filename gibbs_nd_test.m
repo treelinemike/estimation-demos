@@ -9,7 +9,7 @@ rng('default');
 
 % options
 Nsteps = 4;
-doShowSteps = 1;
+doShowSteps = 0;
 doAnimate = 0;
 doMakeVideo = 0;
 Np = 2000;         % number of particles to sample from the true PDF
@@ -72,6 +72,7 @@ xq_cp = mu + vec*xq_cp_raw; % now in EIGENSPACE! .. call to cartprod() is fast
 PDF_disp = reshape(PQ,length(xq_vec{1}),length(xq_vec{2})); % TRUE PDF (array); for display purposes only!
 X1Q = reshape(xq_cp(1,:),length(xq_vec{1}),length(xq_vec{2}));
 X2Q = reshape(xq_cp(2,:),length(xq_vec{1}),length(xq_vec{2}));
+
 % plot samples and true PDF
 figure(mainFigIdx);
 % set(gcf,'Position',[0821 0195 0419 0783]);
@@ -82,13 +83,13 @@ hold on; grid on;
 axis equal;
 plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
 contour(X1Q,X2Q,PDF_disp,'LineWidth',1.6);
-% plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);
 plot(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 1]);
 plot(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
+% plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
 
 % apply kernel density smoother to samples
 q_samp = ones(1,size(x_samp,2))/size(x_samp,2);
-ks_pdf = part2pdf( x_samp, q_samp, xq_cp, 2.0);
+ks_pdf = part2pdf( x_samp, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow!
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
@@ -99,7 +100,7 @@ hold on; grid on;
 axis equal;
 plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
 contour(X1Q,X2Q,KS_pdf,'LineWidth',1.6);
-% plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);
+% plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
 
 % start sampler at random query point
 x0Idx = randi(size(xq_cp,2));
@@ -126,49 +127,50 @@ for gibbsIter = 1:Nsteps
         % dimension that includes the current point
         subscripts = ndind2sub(dimLengths,xIdx);
         pointSubscripts = repmat(subscripts,length(xq_vec{dimIdx}),1);
-        pointSubscripts(:,dimIdx) = (1:length(xq_vec{dimIdx}))';        
+        pointSubscripts(:,dimIdx) = (1:length(xq_vec{dimIdx}))';
         ind = ndsub2ind(dimLengths,pointSubscripts);
         
         % compute 1D PDF and CDF along this line
         pointsAlongDim = xq_cp(:,ind);
         distAlongDim = pointsAlongDim - pointsAlongDim(:,1);
-        distAlongDim = vecnorm(distAlongDim,2,1);        
+        distAlongDim = vecnorm(distAlongDim,2,1);
         normFactor = trapz(distAlongDim,ks_pdf(ind));
         pdf = ks_pdf(ind)/normFactor;
         cdf = cumtrapz(distAlongDim,pdf);
-
+        
         % sample a point from the CDF
         localIdx = find(cdf >= rand(1),1,'first');
         xIdx = ind(localIdx);
         x = xq_cp(:,xIdx);
-        
+       
         % plot results of stepping along this dimension if requested
         if(doShowSteps)
             figure(mainFigIdx);
             subplot(1,2,2);
-%             plot(pointsAlongDim(1,:),pointsAlongDim(2,:),'k.','MarkerSize',5);
-%             plot(xq_cp(1,xIdx),xq_cp(2,xIdx),'ro','MarkerSize',10);
+            plot(pointsAlongDim(1,:),pointsAlongDim(2,:),'k.','MarkerSize',5);
+            plot(xq_cp(1,xIdx),xq_cp(2,xIdx),'ro','MarkerSize',5,'LineWidth',2);
             
+            % sample many points just to observe distribution
+            multiSampleLocalIdx = arrayfun(@(x) find(cdf >= x,1,'first'),rand(1,100));
+
             % compute true PDF along this line
             trueNormFactor = trapz(distAlongDim,PQ(ind));
             truePDF = PQ(ind)/trueNormFactor;
-            
+
             % show 1-D plot
             figure;
             hold on; grid on;
             plot(distAlongDim,pdf,'-','LineWidth',1.6,'Color',[0 0 0.8]);
             plot(distAlongDim,truePDF,'--','LineWidth',1.6,'Color',[0 0 0.8]);
-%             plot(gibbsSamp,0*ones(size(gibbsSamp)),'r.','MarkerSize',10);
+            plot(distAlongDim(multiSampleLocalIdx),0*ones(size(multiSampleLocalIdx)),'r.','MarkerSize',10);
             plot(distAlongDim(localIdx),0,'r+','MarkerSize',10,'LineWidth',3);
-%             legend('Emperical Density','True Density','Samples','Chosen Sample');
-            legend('Emperical Density','True Density','Chosen Sample');
+            legend('Emperical Density','True Density','Samples','Chosen Sample');
             title(sprintf('True Norm Factor: %0.4f',trueNormFactor));
         end
-        
-        
     end
     
-    % store new point in markov chain after moving in each direction
+    % after stepping once along each eigendirection,
+    % store new point as next node in markov chain
     x_hist(:,gibbsIter+1) = x;
     
     % show result of this iteration if requested
