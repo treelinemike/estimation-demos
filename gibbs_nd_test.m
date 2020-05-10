@@ -8,7 +8,7 @@ close all; clear; clc;
 rng('default');
 
 % options
-Nsteps = 4;
+doOneStepOnly = 0;
 doShowSteps = 0;
 doAnimate = 0;
 doMakeVideo = 0;
@@ -16,6 +16,10 @@ Np = 2000;         % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
 mainFigIdx = 1;
+
+% Gibbs Sampler Options
+gibbsBurnIn = 500;    % discard this many samples before capturing points
+gibbsM = 10;          % after burn in, capture every m-th sample
 
 % true PDF parameters
 mu_true = [2 5]';
@@ -98,7 +102,7 @@ title('\bfSmoothed Density with Samples & Gibbs');
 linkaxes(ax,'xy');
 hold on; grid on;
 axis equal;
-plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
+% plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
 contour(X1Q,X2Q,KS_pdf,'LineWidth',1.6);
 % plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
 
@@ -106,6 +110,13 @@ contour(X1Q,X2Q,KS_pdf,'LineWidth',1.6);
 x0Idx = randi(size(xq_cp,2));
 x0 = xq_cp(:,x0Idx);
 plot(x0(1),x0(2),'.','Color',[0 0.8 0],'MarkerSize',20);
+
+% compute number of steps to take
+if(doOneStepOnly)
+    Nsteps = 1;
+else
+   Nsteps = gibbsBurnIn + 1 + gibbsM*(Np-1); 
+end
 
 % start history
 x = x0;
@@ -172,6 +183,7 @@ for gibbsIter = 1:Nsteps
     % after stepping once along each eigendirection,
     % store new point as next node in markov chain
     x_hist(:,gibbsIter+1) = x;
+    xIdx_hist(gibbsIter+1) = xIdx;
     
     % show result of this iteration if requested
     if(doAnimate)
@@ -191,17 +203,20 @@ for gibbsIter = 1:Nsteps
     
 end
 
-if(doMakeVideo)
-    system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');
-    %             system('del frame*.png');
-end
+% if(doMakeVideo)
+%     system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');
+%     %             system('del frame*.png');
+% end
 
-% show all points in the markov chain
+% show selected points from the markov chain
+pointIdx = (gibbsBurnIn+1):gibbsM:Nsteps;
+sampledPoints = x_hist(:,pointIdx);
 figure(1);
 subplot(1,2,2);
-plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
-plot(x_hist(1,:),x_hist(2,:),'k.','MarkerSize',10);
-plot(x_hist(1,:),x_hist(2,:),'ko','MarkerSize',10,'LineWidth',2.0);
+% plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
+% plot(x_hist(1,:),x_hist(2,:),'k.','MarkerSize',10);
+% plot(x_hist(1,:),x_hist(2,:),'ko','MarkerSize',10,'LineWidth',2.0);
+plot(sampledPoints(1,:),sampledPoints(2,:),'.','MarkerSize',5,'Color',[0 0 0.8]);
 
 % from Guillaume on Matlab Centeral Answers:
 % https://www.mathworks.com/matlabcentral/answers/332718-can-i-store-multiple-outputs-of-a-function-into-a-cell
