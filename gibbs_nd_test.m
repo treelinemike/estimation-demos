@@ -12,7 +12,7 @@ doOneStepOnly = 0;
 doShowSteps = 0;
 doAnimate = 0;
 doMakeVideo = 0;
-Np = 200;         % number of particles to sample from the true PDF
+Np = 2000;         % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
 mainFigIdx = 1;
@@ -88,11 +88,12 @@ plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) 
 cmap = colormap;
 set(gca,'Color',cmap(1,:));
 set(gca,'GridAlpha',0.6);
+
 % plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  % query point mesh
 
 % apply kernel density smoother to samples
 q_samp = ones(1,size(x_samp_pre,2))/size(x_samp_pre,2);
-ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow!
+ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
@@ -217,7 +218,6 @@ x_samp_post = x_hist(:,pointIdx);
 % subplot(1,2,2);
 % hold on; grid on;
 plot3(x_samp_post(1,:),x_samp_post(2,:),ones(size(x_samp_post,2)),'.','MarkerSize',4,'Color',[ 0 0 0 ]);
-
 % principal axes of regularized particle set
 mu = mean(x_samp_post,2);
     cov = 1/(size(x_samp_post,2)-1)*(x_samp_post-mu)*(x_samp_post-mu)';
@@ -231,9 +231,9 @@ if(det(vec) < 0)
 end
 
 % plot principal axes of regularized particle set
-% plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
-% plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
-% TODO: WHY DOES ADDING THE ABOVE LINES MAKE THE SURF() GO AWAY???
+plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
+zlim([0 3]);
 
 % from Guillaume on Matlab Centeral Answers:
 % https://www.mathworks.com/matlabcentral/answers/332718-can-i-store-multiple-outputs-of-a-function-into-a-cell
