@@ -16,6 +16,8 @@ Np = 2000;         % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
 mainFigIdx = 1;
+NSD = 5;           % number of standard deviations to extend query points (+/-) in each dimension from mean
+bwScale = 1.2;     % multiply optimal bandwidth by this factor
 
 % Gibbs Sampler Options
 gibbsBurnIn = 500;    % discard this many samples before capturing points
@@ -32,13 +34,13 @@ cov_true = [sigma_1^2 corr*sigma_1*sigma_2; corr*sigma_1*sigma_2 sigma_2^2];
 x_samp_pre = mvnrnd(mu_true',cov_true,Np)';
 
 % state space to explore (i.e. query points)
-NSD = 4;  % number of standard deviations to extend (+/-) in each dimension from mean
 nDim = size(x_samp_pre,1);
 
 % principal axes of initial particle set
 mu = mean(x_samp_pre,2);
 cov = 1/(size(x_samp_pre,2)-1)*(x_samp_pre-mu)*(x_samp_pre-mu)';
 [vec,val] = eig(cov);
+acos(vec(1,1))*180/pi
 % choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
 % standard basis
 % TODO: may need to further test and refine this!
@@ -93,7 +95,14 @@ set(gca,'GridAlpha',0.6);
 
 % apply kernel density smoother to samples
 q_samp = ones(1,size(x_samp_pre,2))/size(x_samp_pre,2);
-ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
+
+d = size(cov,1);
+bw_opt = zeros(1,d);
+for i = 1:d
+    bw_opt(i) = sqrt(cov(i,i))*(4/((d+2)*size(x_samp_pre,2)))^(1/(d+4));
+end
+% ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
+ks_pdf = mvksdensity(x_samp_pre',xq_cp','Kernel','epanechnikov','weights',q_samp,'bandwidth',bwScale*bw_opt);
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
@@ -130,8 +139,10 @@ xIdx_hist = NaN(1,Nsteps+1);
 xIdx_hist(1) = x0Idx;
 
 % show starting point
-% plot(x0(1),x0(2),'k.','MarkerSize',10);
-% plot(x0(1),x0(2),'ko','MarkerSize',10,'LineWidth',2.0);
+if(doShowSteps)
+    plot3(x0(1),x0(2),2,'o','MarkerSize',5,'LineWidth',2,'Color',[0 0.8 0]);
+    zlim([0 3]);
+end
 
 % iterate sampler
 for gibbsIter = 1:Nsteps
@@ -161,8 +172,9 @@ for gibbsIter = 1:Nsteps
         if(doShowSteps)
             figure(mainFigIdx);
             subplot(1,2,2);
-            plot(pointsAlongDim(1,:),pointsAlongDim(2,:),'k.','MarkerSize',5);
-            plot(xq_cp(1,xIdx),xq_cp(2,xIdx),'ro','MarkerSize',5,'LineWidth',2);
+            plot3(pointsAlongDim(1,:),pointsAlongDim(2,:),2*ones(size(pointsAlongDim,2)),'k.','MarkerSize',5);
+            plot3(xq_cp(1,xIdx),xq_cp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
+            zlim([0 3]);
             
             % sample many points just to observe distribution
             multiSampleLocalIdx = arrayfun(@(x) find(cdf >= x,1,'first'),rand(1,100));
@@ -206,22 +218,19 @@ for gibbsIter = 1:Nsteps
     
 end
 
-% if(doMakeVideo)
-%     system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');
-%     %             system('del frame*.png');
-% end
-
-% show selected points from the markov chain
+% keep only selected points from the markov chain
 pointIdx = (gibbsBurnIn+1):gibbsM:Nsteps;
 x_samp_post = x_hist(:,pointIdx);
-% figure(mainFigIdx);
-% subplot(1,2,2);
-% hold on; grid on;
+figure(mainFigIdx);
+subplot(1,2,2);
+hold on; grid on;
 plot3(x_samp_post(1,:),x_samp_post(2,:),ones(size(x_samp_post,2)),'.','MarkerSize',4,'Color',[ 0 0 0 ]);
+
 % principal axes of regularized particle set
 mu = mean(x_samp_post,2);
     cov = 1/(size(x_samp_post,2)-1)*(x_samp_post-mu)*(x_samp_post-mu)';
 [vec,val] = eig(cov);
+acos(vec(1,1))*180/pi
 % choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
 % standard basis
 % TODO: may need to further test and refine this!
@@ -234,47 +243,3 @@ end
 plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
 plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
 zlim([0 3]);
-
-% from Guillaume on Matlab Centeral Answers:
-% https://www.mathworks.com/matlabcentral/answers/332718-can-i-store-multiple-outputs-of-a-function-into-a-cell
-% note: output is serialized, but not entirely consistent with serialzied
-% output from [XX,YY] = meshgrid(xvec,yvec)... need to transpose via XXT = XX'; XXT(:)
-% to get same results...
-% meshgrid() and ndgrid() use different conventions:
-% https://www.mathworks.com/matlabcentral/answers/99720-what-is-the-difference-between-the-ndgrid-and-meshgrid-functions-in-matlab
-function p = cartprod(c)
-%returns the cartesian products of the vectors contained in cell array v
-p = cell(size(c));
-[p{:}] = ndgrid(c{:});
-p = cell2mat(cellfun(@(x) x(:), p, 'UniformOutput', false));
-end
-
-% index to subscripts in n-dimensions
-% without needing to specifcy dimensionality explicitly for output args
-function sub = ndind2sub(dimLengths,ind)
-dimSizes = [1 cumprod(dimLengths(1:end-1))];
-sub = zeros(1,length(dimLengths));
-for dimIdx = length(dimLengths):-1:1
-    thisIdx = ceil( ind / dimSizes(dimIdx) );
-    sub(dimIdx) = thisIdx;
-    ind = ind - (thisIdx-1)*dimSizes(dimIdx);
-end
-end
-
-% subscripts to index in n-dimensions
-% without needing to specify dimensionality via separate arguments
-% sub = matrix with #col = #dim; #row = #points to evaluate
-% ind = vector length = (#row of sub) with indices of each query point
-function ind = ndsub2ind(dimLengths,sub)
-dimSizes = [1 cumprod(dimLengths(1:end-1))];
-ind = zeros(1,length(dimLengths));
-
-for pointNum = 1:size(sub,1)
-    pointIdx = 1;
-    for dimIdx = 1:length(dimLengths)
-        pointIdx = pointIdx + dimSizes(dimIdx)*(sub(pointNum,dimIdx)-1);
-    end
-    ind(pointNum) = pointIdx;
-end
-end
-
