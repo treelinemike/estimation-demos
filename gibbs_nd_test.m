@@ -8,21 +8,21 @@ close all; clear; clc;
 rng('default');
 
 % options
-doUseExternalGibbsFcn = 0;
-doOneStepOnly = 0;
-doShowSteps = 0;
-doAnimate = 0;
-doMakeVideo = 0;
-Np = 2000;         % number of particles to sample from the true PDF
+doUseExternalGibbsFcn = 1;
+doOneStepOnly = 0;             % does nothing if using exernal Gibbs function
+doShowSteps = 0;               % does nothing if using exernal Gibbs function
+doAnimate = 0;                 % does nothing if using exernal Gibbs function
+doMakeVideo = 0;               % only if animation enabled and not using external Gibbs
+stepsToAnimate = 50;           % if animating only show this many steps in Markov chain
+Np = 2000;          % number of particles to sample from the true PDF
 Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
-mainFigIdx = 1;
-NSD = 5;           % number of standard deviations to extend query points (+/-) in each dimension from mean
-bwScale = 1.2;     % multiply optimal bandwidth by this factor
+NSD = 4;           % number of standard deviations to extend query points (+/-) in each dimension from mean
+bwScale = 1.0;     % multiply optimal bandwidth by this factor
 
 % Gibbs Sampler Options
 gibbsBurnIn = 500;    % discard this many samples before capturing points
-gibbsM = 10;          % after burn in, capture every m-th sample
+gibbsM = 100;         % after burn in, capture every m-th sample
 
 % true PDF parameters
 mu_true = [2 5]';
@@ -59,7 +59,7 @@ for dimIdx = 1:nDim
     dimLengths(dimIdx) = length(xq_vec{dimIdx});
 end
 xq_cp_raw = cartprod(xq_vec)';
-xq_cp = mu + vec*xq_cp_raw; % now in EIGENSPACE! .. call to cartprod() is fast
+xq_cp = mu + vec*xq_cp_raw;    % now in EIGENSPACE! .. call to cartprod() is fast
 
 % compare to meshgrid for 2D case... need to use transpose!
 % meshgrid() and ndgrid() use different conventions!
@@ -76,10 +76,14 @@ X1Q = reshape(xq_cp(1,:),length(xq_vec{1}),length(xq_vec{2}));
 X2Q = reshape(xq_cp(2,:),length(xq_vec{1}),length(xq_vec{2}));
 
 % plot samples and true PDF
-figure(mainFigIdx);
-% set(gcf,'Position',[0821 0195 0419 0783]);
-set(gcf,'Position',[0488 1.562000e+02 0863 6.058000e+02]);
-ax = subplot(1,2,1);
+figure;
+if( ~doUseExternalGibbsFcn & doShowSteps)
+    set(gcf,'Position',[1.562000e+02 1.562000e+02 1.194800e+03 6.058000e+02]);
+    ax = subplot(2,3,[1 4]);
+else
+    set(gcf,'Position',[0488 1.562000e+02 0863 6.058000e+02]);
+    ax = subplot(1,2,1);
+end
 title('\bfTrue Density with Samples');
 hold on; grid on;
 axis equal;
@@ -107,7 +111,11 @@ ks_pdf = mvksdensity(x_samp_pre',xq_cp','Kernel','epanechnikov','weights',q_samp
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
-ax(end+1) = subplot(1,2,2);
+if( ~doUseExternalGibbsFcn & doShowSteps)
+    ax(end+1) = subplot(2,3,[2 5]);
+else
+    ax(end+1) = subplot(1,2,2);
+end
 title('\bfSmoothed Density with Samples & Gibbs');
 linkaxes(ax,'xy');
 hold on; grid on;
@@ -174,8 +182,7 @@ else
             
             % plot results of stepping along this dimension if requested
             if(doShowSteps)
-                figure(mainFigIdx);
-                subplot(1,2,2);
+                subplot(2,3,[2 5]);
                 plot3(pointsAlongDim(1,:),pointsAlongDim(2,:),2*ones(size(pointsAlongDim,2)),'k.','MarkerSize',5);
                 plot3(xq_cp(1,xIdx),xq_cp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
                 zlim([0 3]);
@@ -188,13 +195,21 @@ else
                 truePDF = PQ(ind)/trueNormFactor;
                 
                 % show 1-D plot
-                figure;
+                switch(dimIdx)
+                    case 1
+                        subplot(2,3,3);
+                    case 2
+                        subplot(2,3,6);
+                    otherwise
+                        error('Can only show steps for 2-dim');
+                end
                 hold on; grid on;
                 plot(distAlongDim,pdf,'-','LineWidth',1.6,'Color',[0 0 0.8]);
                 plot(distAlongDim,truePDF,'--','LineWidth',1.6,'Color',[0 0 0.8]);
                 plot(distAlongDim(multiSampleLocalIdx),0*ones(size(multiSampleLocalIdx)),'r.','MarkerSize',10);
                 plot(distAlongDim(localIdx),0,'r+','MarkerSize',10,'LineWidth',3);
-                legend('Emperical Density','True Density','Samples','Chosen Sample');
+                legh = legend('Emperical Density','True Density','Samples','Chosen Sample');
+                legh.Position = [0.8607    0.7908    0.1237    0.1148];
                 title(sprintf('True Norm Factor: %0.4f',trueNormFactor));
             end
         end
@@ -203,33 +218,18 @@ else
         % store new point as next node in markov chain
         x_hist(:,gibbsIter+1) = x;
         xIdx_hist(gibbsIter+1) = xIdx;
-        
-        % show result of this iteration if requested
-        if(doAnimate)
-            figure(mainFigIdx);
-            plot(x(1),x(2),'k.','MarkerSize',10);
-            plot(x(1),x(2),'ko','MarkerSize',10,'LineWidth',2.0);
-            plot(x_hist(1,:),x_hist(2,:),'k.-','MarkerSize',10);
-            
-            if(doMakeVideo)
-                thisImgFile = sprintf('frame%03d.png',gibbsIter);
-                saveas(gcf,thisImgFile);
-                system(['convert -trim ' thisImgFile ' ' thisImgFile]);  % REQUIRES convert FROM IMAGEMAGICK!
-            else
-                pause(0.1);
-            end
-        end
-        
     end
     
-
     % downsample to keep only selected points from the markov chain
     x_samp_post = x_hist(:,((gibbsBurnIn+1):gibbsM:Nsteps));
 end
 
 % show sampled point cloud
-figure(mainFigIdx);
-subplot(1,2,2);
+if( ~doUseExternalGibbsFcn & doShowSteps)
+    subplot(2,3,[2 5]);
+else
+    subplot(1,2,2);
+end
 hold on; grid on;
 plot3(x_samp_post(1,:),x_samp_post(2,:),ones(size(x_samp_post,2)),'.','MarkerSize',4,'Color',[ 0 0 0 ]);
 
@@ -250,3 +250,64 @@ end
 plot3(mu(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],mu(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
 plot3(mu(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],mu(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],[2 2],'-','LineWidth',3,'Color',[1 0 1]);
 zlim([0 3]);
+
+%% animate if requested
+if(doAnimate & ~doUseExternalGibbsFcn)
+    maxStep = min([stepsToAnimate, size(x_hist,2)]);
+    figure;
+    set(gcf,'Position',[0488 9.220000e+01 5.834000e+02 6.698000e+02]);
+    hold on; grid on;
+    % plot(x_samp(1,:),x_samp(2,:),'.','MarkerSize',5,'Color',0.5*ones(1,3));
+    contour(X1Q,X2Q,KS_pdf,'LineWidth',1.2);
+    %     surf(X1Q,X2Q,KS_pdf,'EdgeColor','none','FaceAlpha',0.7);
+    % plot(xq_cp(1,:),xq_cp(2,:),'r.','MarkerSize',5);  %    query point mesh
+    %     cmap = colormap;
+    %     set(gca,'Color',cmap(1,:));
+    %     set(gca,'GridAlpha',0.6);
+    
+    plot3(x0(1),x0(2),2,'.','MarkerSize',30,'LineWidth',2,'Color',[0 0.8 0]);
+    xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+    axis equal;
+    xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+%     axis off;
+    vidAx = gca;
+    vidAx.XTickLabel = [];
+    vidAx.YTickLabel = [];
+    vidAx.XColor = 'none'
+    vidAx.YColor = 'none'
+    drawnow;
+    
+    if(doMakeVideo)
+        thisImgFile = sprintf('frame%03d.png',gibbsIter);
+        saveas(gcf,thisImgFile);
+        system(['convert -trim ' thisImgFile ' ' thisImgFile]);  % REQUIRES convert FROM IMAGEMAGICK!
+    else
+        pause(0.1);
+    end
+    
+    for aniStep = 1:maxStep-1
+        plot3(x_hist(1,aniStep+1),x_hist(2,aniStep+1),2,'k.','MarkerSize',5);
+        plot3(x_hist(1,aniStep+1),x_hist(2,aniStep+1),2,'ko','MarkerSize',5 ,'LineWidth',2.0);
+        plot3(x_hist(1,aniStep+[0 1]),x_hist(2,aniStep+[0 1]),[2 2],'k-','MarkerSize',10);
+        
+        
+        xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+        drawnow;
+        
+        
+        if(doMakeVideo)
+            thisImgFile = sprintf('frame%03d.png',aniStep);
+            saveas(gcf,thisImgFile);
+            system(['convert -trim ' thisImgFile ' ' thisImgFile]);  % REQUIRES convert FROM IMAGEMAGICK!
+        else
+            pause(0.1);
+        end
+        
+        
+    end
+    if(doMakeVideo)
+        system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');     
+        system('rm frame*.png');
+    end
+end
+
