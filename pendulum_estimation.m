@@ -12,8 +12,8 @@ doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
 doSortInSIR = 1;         % easier to understand visually if sorted, but not necessary for algorithm to work
-doSaveAssimPlots = 0;
-doMakeVideo = 0;
+doSaveAssimPlots = 1;
+doMakeVideo = 1;
 
 % simulation time parameters
 t0 = 0;                  % [s] simulation start time
@@ -32,9 +32,13 @@ COV_w = [(0.25*pi/180)^2 0; 0 (0.1*pi/180)^2];                % assumed covarian
 resamplingMethod = 'Reg';                                     % 'SIR', 'Reg'
 
 % regularization options (only used if resamplingMethod = 'Reg')
-hss = 0.1;                     % step size in state space TODO: allow different step sizes in each dimension
-NSD = 5;                       % number of standard deviations to extend query points (+/-) in each dimension from mean
-bwScale = 1.2;                 % multiply optimal bandwidth by this factor
+hss = 0.001;                     % step size in state space TODO: allow different step sizes in each dimension
+NSD = 6;                       % number of standard deviations to extend query points (+/-) in each dimension from mean
+bwScale = 1.4;                 % multiply optimal bandwidth by this factor
+
+% Gibbs Sampling options
+gibbsBurnIn = 500;             % discard this many samples before capturing points
+gibbsM = 10;                   % after burn in, capture every m-th sample
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -222,7 +226,7 @@ Xtraj = mu;
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for k = 2:4;%length(t_samp)
+for k = 2:length(t_samp)
     
     % initialize figure
     figure;
@@ -389,13 +393,13 @@ for k = 2:4;%length(t_samp)
             end
 %             val
 %             vec
-            
+
             % compute query points
             x_qp_vec = [];
             dimLengths = [];
             for dimIdx = 1:nDim
                 sd = sqrt( val(dimIdx,dimIdx));
-                x_qp_vec{dimIdx} = -NSD*sd:sd/10:NSD*sd;
+                x_qp_vec{dimIdx} = -NSD*sd:hss:NSD*sd;
                 dimLengths(dimIdx) = length(x_qp_vec{dimIdx});
             end
             x_qp_raw = cartprod(x_qp_vec)';
@@ -417,11 +421,17 @@ for k = 2:4;%length(t_samp)
             % ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
             ks_pdf = mvksdensity(Xprior',x_qp','Kernel','epanechnikov','weights',q,'bandwidth',bwScale*bw_opt);
             
-            % reshape and displayPDF
+            % reshape PDF for display
             KS_pdf = reshape(ks_pdf,size(X1Q));
-            contour(X1Q,X2Q,KS_pdf,'LineWidth',1.2);
+
+            % resample ks_pdf on grid x_qp via Gibbs sampling
             
-            Xpost = X_SIR;
+            Xpost = gibbsSampleRect(x_qp, ks_pdf, dimLengths, Np, gibbsBurnIn, gibbsM);
+            % plot posterior particle set
+            plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',5,'Color',[1 0.2 1]);
+            
+            % show smoothed PDF on top of samples (so it is visible) 
+            contour(X1Q,X2Q,KS_pdf,'LineWidth',1);
             
         otherwise
             error('Invalid resampling method!');
@@ -452,7 +462,7 @@ for k = 2:4;%length(t_samp)
     
     % plot posterior distribution after resampling
     % and add "ellipse" for posterior particle set at this time step (k)
-    plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
+    plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.5 1]);
     [vec,val] = eig(pStat(k).post.cov);
     % make sure that eigenvector matrix gives a right-handed coordinate system
     % (in n-dimensions)... need det(vec) = 1.0 not -1.0
@@ -511,11 +521,7 @@ for k = 2:4;%length(t_samp)
     legend('Obs. Noise (Not Norm.)','Residuals');
     
     
-    
-    
-    
-    
-    
+
     % Bayesian update in 1D
     subplot(2,3,4:5);
     hold on; grid on;
@@ -546,7 +552,6 @@ for k = 2:4;%length(t_samp)
     % TRUTH
     plot(pStat(k).truth(1),0,'^','MarkerSize',10,'Color',[0 0 0],'LineWidth',1.6,'MarkerFaceColor',[0 0.6 0]);
     
-    
     % finish plot
     xlim([-0.5 0.5]);
     ylim([0 85]);
@@ -554,8 +559,6 @@ for k = 2:4;%length(t_samp)
     xlabel('\bfx_1: Angular Position [rad]');
     ylabel('\bfProbability Density');
     title('\bfBayesian Update in 1D');
-    
-    
     
     % show pendulum
     subplot(2,3,1);
