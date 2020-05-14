@@ -15,7 +15,6 @@ doAnimate = 0;                 % does nothing if using exernal Gibbs function
 doMakeVideo = 0;               % only if animation enabled and not using external Gibbs
 stepsToAnimate = 50;           % if animating only show this many steps in Markov chain
 Np = 2000;                     % number of particles to sample from the true PDF
-Kss = 0.125;                   % expand patch of state space to explore by this factor times the span of samples on either side
 hss = 0.1;                     % step size in state space TODO: allow different step sizes in each dimension
 NSD = 4;                       % number of standard deviations to extend query points (+/-) in each dimension from mean
 bwScale = 1.0;                 % multiply optimal bandwidth by this factor
@@ -51,29 +50,29 @@ if(det(vec) < 0)
 end
 
 % assemble query point vectors for each eigen-direction
-xq_vec = [];
+x_qp_vec = [];
 dimLengths = [];
 for dimIdx = 1:nDim
     sd = sqrt( val(dimIdx,dimIdx));
-    xq_vec{dimIdx} = -NSD*sd:hss:NSD*sd;
-    dimLengths(dimIdx) = length(xq_vec{dimIdx});
+    x_qp_vec{dimIdx} = -NSD*sd:hss:NSD*sd;
+    dimLengths(dimIdx) = length(x_qp_vec{dimIdx});
 end
-xq_cp_raw = cartprod(xq_vec)';
-xq_cp = mu + vec*xq_cp_raw;    % now in EIGENSPACE! .. call to cartprod() is fast
+x_qp_raw = cartprod(x_qp_vec)';
+x_qp = mu + vec*x_qp_raw;    % now in EIGENSPACE! .. call to cartprod() is fast
 
 % compare to meshgrid for 2D case... need to use transpose!
 % meshgrid() and ndgrid() use different conventions!
 % https://www.mathworks.com/matlabcentral/answers/99720-what-is-the-difference-between-the-ndgrid-and-meshgrid-functions-in-matlab
-% [XX,YY] = meshgrid(xq_vec{1},xq_vec{2});
-% xq_diff = xq_cp(:,1)-XX(:)
+% [XX,YY] = meshgrid(x_qp_vec{1},x_qp_vec{2});
+% x_qp_diff = x_qp(:,1)-XX(:)
 
 % generate PDF at query points
 % [X1Q,X2Q] = meshgrid(xq_vec{1},xq_vec{2});
 % XQ = [X1Q(:) X2Q(:)]';
-[PQ] = mvnpdf(xq_cp',mu_true',cov_true);  % TRUE PDF (vector)
-PDF_disp = reshape(PQ,length(xq_vec{1}),length(xq_vec{2})); % TRUE PDF (array); for display purposes only!
-X1Q = reshape(xq_cp(1,:),length(xq_vec{1}),length(xq_vec{2}));
-X2Q = reshape(xq_cp(2,:),length(xq_vec{1}),length(xq_vec{2}));
+[PQ] = mvnpdf(x_qp',mu_true',cov_true);  % TRUE PDF (vector)
+PDF_disp = reshape(PQ,length(x_qp_vec{1}),length(x_qp_vec{2})); % TRUE PDF (array); for display purposes only!
+X1Q = reshape(x_qp(1,:),length(x_qp_vec{1}),length(x_qp_vec{2}));
+X2Q = reshape(x_qp(2,:),length(x_qp_vec{1}),length(x_qp_vec{2}));
 
 % plot samples and true PDF
 figure;
@@ -107,7 +106,7 @@ for i = 1:d
     bw_opt(i) = sqrt(cov(i,i))*(4/((d+2)*size(x_samp_pre,2)))^(1/(d+4));
 end
 % ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
-ks_pdf = mvksdensity(x_samp_pre',xq_cp','Kernel','epanechnikov','weights',q_samp,'bandwidth',bwScale*bw_opt);
+ks_pdf = mvksdensity(x_samp_pre',x_qp','Kernel','epanechnikov','weights',q_samp,'bandwidth',bwScale*bw_opt);
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
@@ -128,11 +127,11 @@ set(gca,'Color',cmap(1,:));
 set(gca,'GridAlpha',0.6);
 
 if(doUseExternalGibbsFcn)
-    x_samp_post = gibbsSampleRect(xq_cp, ks_pdf, dimLengths, Np, gibbsBurnIn, gibbsM);
+    x_samp_post = gibbsSampleRect(x_qp, ks_pdf, dimLengths, Np, gibbsBurnIn, gibbsM);
 else
     % start sampler at random query point
-    x0Idx = randi(size(xq_cp,2));
-    x0 = xq_cp(:,x0Idx);
+    x0Idx = randi(size(x_qp,2));
+    x0 = x_qp(:,x0Idx);
     % plot(x1(1),x0(2),'.','Color',[0 0.8 0],'MarkerSize',20);
     
     % compute number of steps to take
@@ -163,12 +162,12 @@ else
             % extract indices for all points in a line along the selected
             % dimension that includes the current point
             subscripts = ndind2sub(dimLengths,xIdx);
-            pointSubscripts = repmat(subscripts,length(xq_vec{dimIdx}),1);
-            pointSubscripts(:,dimIdx) = (1:length(xq_vec{dimIdx}))';
+            pointSubscripts = repmat(subscripts,length(x_qp_vec{dimIdx}),1);
+            pointSubscripts(:,dimIdx) = (1:length(x_qp_vec{dimIdx}))';
             ind = ndsub2ind(dimLengths,pointSubscripts);
             
             % compute 1D PDF and CDF along this line
-            pointsAlongDim = xq_cp(:,ind);
+            pointsAlongDim = x_qp(:,ind);
             distAlongDim = pointsAlongDim - pointsAlongDim(:,1);
             distAlongDim = vecnorm(distAlongDim,2,1);
             normFactor = trapz(distAlongDim,ks_pdf(ind));
@@ -178,13 +177,13 @@ else
             % sample a point from the CDF
             localIdx = find(cdf >= rand(1),1,'first');
             xIdx = ind(localIdx);
-            x = xq_cp(:,xIdx);
+            x = x_qp(:,xIdx);
             
             % plot results of stepping along this dimension if requested
             if(doShowSteps)
                 subplot(2,3,[2 5]);
                 plot3(pointsAlongDim(1,:),pointsAlongDim(2,:),2*ones(size(pointsAlongDim,2)),'k.','MarkerSize',5);
-                plot3(xq_cp(1,xIdx),xq_cp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
+                plot3(x_qp(1,xIdx),x_qp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
                 zlim([0 3]);
                 
                 % sample many points just to observe distribution
@@ -266,9 +265,9 @@ if(doAnimate & ~doUseExternalGibbsFcn)
     %     set(gca,'GridAlpha',0.6);
     
     plot3(x0(1),x0(2),2,'.','MarkerSize',30,'LineWidth',2,'Color',[0 0.8 0]);
-    xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+    xlim([min(x_qp(1,:)) max(x_qp(1,:))]);
     axis equal;
-    xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+    xlim([min(x_qp(1,:)) max(x_qp(1,:))]);
 %     axis off;
     vidAx = gca;
     vidAx.XTickLabel = [];
@@ -291,7 +290,7 @@ if(doAnimate & ~doUseExternalGibbsFcn)
         plot3(x_hist(1,aniStep+[0 1]),x_hist(2,aniStep+[0 1]),[2 2],'k-','MarkerSize',10);
         
         
-        xlim([min(xq_cp(1,:)) max(xq_cp(1,:))]);
+        xlim([min(x_qp(1,:)) max(x_qp(1,:))]);
         drawnow;
         
         

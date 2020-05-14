@@ -11,25 +11,30 @@ rng(4265,'twister');
 doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
-doSortInSIR = 1;       % easier to understand visually if sorted, but not necessary for algorithm to work
+doSortInSIR = 1;         % easier to understand visually if sorted, but not necessary for algorithm to work
 doSaveAssimPlots = 0;
 doMakeVideo = 0;
 
 % simulation time parameters
-t0 = 0;        % [s] simulation start time
-tf = 20;       % [s] simulation end time
-dt = 0.01;     % [s] simulation timestep size (discritized dynamics)
+t0 = 0;                  % [s] simulation start time
+tf = 20;                 % [s] simulation end time
+dt = 0.01;               % [s] simulation timestep size (discritized dynamics)
 
 % sampling options
-dt_samp = 0.3;      % observation sampling period
-COV_v = (0.02)^2;  % VARIANCE of sensor noise; assumed to be well known (true value = value used in estimator)
+dt_samp = 0.3;           % observation sampling period
+COV_v = (0.02)^2;        % VARIANCE of sensor noise; assumed to be well known (true value = value used in estimator)
 
 % estimator options
-Np = 2000;                                    % number of particles
-COV_0 = [(1*pi/180)^2 0; 0 (3*pi/180)^2];     % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
+Np = 2000;                                                    % number of particles
+COV_0 = [(1*pi/180)^2 0; 0 (3*pi/180)^2];                     % covariance of Gaussian from which we'll select initial paarticles; NOTE: stdev units are rad and rad/s (NOT DERIVATIVES) for this specific covariance matrix
 COV_w_true = [(0.012*pi/180)^2 0; 0 (0.017*pi/180)^2];        % true state propagation covariance
-COV_w = [(0.25*pi/180)^2 0; 0 (0.1*pi/180)^2]; % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
-resamplingMethod = 'Reg';                     % 'SIR', 'Reg'
+COV_w = [(0.25*pi/180)^2 0; 0 (0.1*pi/180)^2];                % assumed covariance matrix for state propagation noise (note: rows correspond to errors in DERIVATIVES of state variables)
+resamplingMethod = 'Reg';                                     % 'SIR', 'Reg'
+
+% regularization options (only used if resamplingMethod = 'Reg')
+hss = 0.1;                     % step size in state space TODO: allow different step sizes in each dimension
+NSD = 5;                       % number of standard deviations to extend query points (+/-) in each dimension from mean
+bwScale = 1.2;                 % multiply optimal bandwidth by this factor
 
 % initial conditions (state vector: [theta theta_dot]' stacked as: [stochastic truth; undamped model propagation; deterministic truth])
 theta_0     = 25*pi/180;      % [rad]
@@ -38,6 +43,7 @@ x0 = [theta_0 theta_dot_0]';  % [rad rad/s rad rad/s rad rad/s]'
 
 % define parameters of physical system in a structure
 % that we can pass through the ODE solver to the update function
+% or use in discrete dynamics
 sysParams = [];
 sysParams.m = 2;
 sysParams.l = 9.655;   % 9.655m starting at 25deg gives a circular phase portrait!
@@ -92,6 +98,9 @@ z_samp = interp1(time,z_true,t_samp)' + sqrt(COV_v)*randn(length(t_samp),1);
 z_samp(1) = NaN; % NOTE: DO NOT sample at the initial state (we assume that the initial state estimate is given/known)
 x_SD_samp = interp1(time,x_SD',t_samp)';  % true trajectory at sample times
 x_DU_samp = interp1(time,x_DU',t_samp)';  % naive trajectory sample times
+
+% extract dimensionality of state space
+nDim = size(x0,1);
 
 %% plot time series trajectories
 if(doShowDynamicsPlots)
@@ -213,7 +222,7 @@ Xtraj = mu;
 % local state 1 (beginning of frame) to local state 2 (end of frame)
 % note that the first observation is NOT at the initial time b/c we assume
 % that we have an initial state estimate
-for k = 2:length(t_samp)
+for k = 2:4;%length(t_samp)
     
     % initialize figure
     figure;
@@ -230,9 +239,12 @@ for k = 2:length(t_samp)
     
     % add "ellipse" for previous particle set
     [vec,val] = eig(pStat(k-1).post.cov);
-    vec = vec*diag(sign(diag(vec)));
+    % make sure that eigenvector matrix gives a right-handed coordinate system
+    % (in n-dimensions)... need det(vec) = 1.0 not -1.0
+    % TODO: may need to further test and refine this!
     if(det(vec) < 0)
-        error('Negative determinant of eigenvector matrix!');
+        vec(:,1) = -1*vec(:,1);
+        assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
     end
     endpts = vec*sqrt(val);
     %     plot(pStat(k-1).post.mean(1)+[-endpts(1,1) endpts(1,1)],pStat(k-1).post.mean(2)+[-endpts(1,2) endpts(1,2)],'k-','LineWidth',2);
@@ -332,23 +344,18 @@ for k = 2:length(t_samp)
             
         case 'Reg'
             % Regularization
+  
             
-            % need to choose some region of state space to populate, and distribute query points in it
-            % for now use the eigenvector space of the SIR posterior
-            [mu,cov] = getPStats(X_SIR);
-            [vec,val] = eig(cov);
+            % first display PRIOR covariance eigenvectors
+            [vec,val] = eig(pStat(k).prior.cov);
             vec = vec*diag(sign(diag(vec)));
+            % make sure that eigenvector matrix gives a right-handed coordinate system
+            % (in n-dimensions)... need det(vec) = 1.0 not -1.0
+            % TODO: may need to further test and refine this!
             if(det(vec) < 0)
-                error('Negative determinant of eigenvector matrix!');
+                vec(:,1) = -1*vec(:,1);
+                assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
             end
-            h_reg = 0.005;
-            K_reg = 6;
-            [XQ_XX,XQ_YY] = meshgrid(-K_reg*sqrt(val(1,1)):h_reg:K_reg*sqrt(val(1,1)), -K_reg*sqrt(val(2,2)):h_reg:K_reg*sqrt(val(2,2)));
-            XQ_reg = [XQ_XX(:)';XQ_YY(:)'];
-            XQ_reg = vec*XQ_reg + mu;
-            XQ_XX_reg = reshape(XQ_reg(1,:),size(XQ_XX,1),size(XQ_XX,2));
-            XQ_YY_reg = reshape(XQ_reg(2,:),size(XQ_XX,1),size(XQ_XX,2));
-            
             
             subplot(2,3,6);
             hold on; grid on;
@@ -356,17 +363,63 @@ for k = 2:length(t_samp)
             xlim(pStat(k).truth(1)+[-0.3 0.3]);
             ylim(pStat(k).truth(2)+[-0.3 0.3]);
             title('\bfRegularization');
+            
             % show prior
-            plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
+            plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]); 
             plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 0]);
             plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
             
             % show truth
             plot(pStat(k).truth(1),pStat(k).truth(2),'o','MarkerSize',10,'Color',[0 0.6 0],'LineWidth',3);
             
+ 
+            
+            % need to choose some region of state space to populate, and distribute query points in it
+            % for now use the eigenvector space of the SIR posterior as the
+            % basis for a rectangular grid of query points
+            [mu,cov] = getPStats(X_SIR);
+            [vec,val] = eig(cov);
+            vec = vec*diag(sign(diag(vec)));
+            % make sure that eigenvector matrix gives a right-handed coordinate system
+            % (in n-dimensions)... need det(vec) = 1.0 not -1.0
+            % TODO: may need to further test and refine this!
+            if(det(vec) < 0)
+                vec(:,1) = -1*vec(:,1);
+                assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
+            end
+%             val
+%             vec
+            
+            % compute query points
+            x_qp_vec = [];
+            dimLengths = [];
+            for dimIdx = 1:nDim
+                sd = sqrt( val(dimIdx,dimIdx));
+                x_qp_vec{dimIdx} = -NSD*sd:sd/10:NSD*sd;
+                dimLengths(dimIdx) = length(x_qp_vec{dimIdx});
+            end
+            x_qp_raw = cartprod(x_qp_vec)';
+            x_qp = mu + vec*x_qp_raw;         % now in EIGENSPACE! .. call to cartprod() is fast
+
+            % reshape query points (for display only... for 2D state space)
+            X1Q = reshape(x_qp(1,:),length(x_qp_vec{1}),length(x_qp_vec{2}));
+            X2Q = reshape(x_qp(2,:),length(x_qp_vec{1}),length(x_qp_vec{2}));
+            
+            % show query points
+%             plot(x_qp(1,:),x_qp(2,:),'r.','MarkerSize',5);  %    query point mesh
+            
             % smooth prior particle set using q_i weights on Epanechnikov kernels
-            ks_pdf = part2pdf( Xprior, q, XQ_reg, 2.0);
-            contour(XQ_XX_reg,XQ_YY_reg,reshape(ks_pdf,size(XQ_XX,1),size(XQ_XX,2)))
+            d = nDim;
+            bw_opt = zeros(1,d);
+            for i = 1:d
+                bw_opt(i) = sqrt(cov(i,i))*(4/((d+2)*size(Xprior,2)))^(1/(d+4));
+            end
+            % ks_pdf = part2pdf( x_samp_pre, q_samp, xq_cp, 2.0);  % TODO: this is pretty slow! and appears to generate diagonal-skewed densities?
+            ks_pdf = mvksdensity(Xprior',x_qp','Kernel','epanechnikov','weights',q,'bandwidth',bwScale*bw_opt);
+            
+            % reshape and displayPDF
+            KS_pdf = reshape(ks_pdf,size(X1Q));
+            contour(X1Q,X2Q,KS_pdf,'LineWidth',1.2);
             
             Xpost = X_SIR;
             
@@ -387,9 +440,12 @@ for k = 2:length(t_samp)
     % and add "ellipse" for prior particle set at this time step (k)
     plot(Xprior(1,:),Xprior(2,:),'.','MarkerSize',5,'Color',[1 0.6 0.6]);
     [vec,val] = eig(pStat(k).prior.cov);
-    vec = vec*diag(sign(diag(vec)));
+    % make sure that eigenvector matrix gives a right-handed coordinate system
+    % (in n-dimensions)... need det(vec) = 1.0 not -1.0
+    % TODO: may need to further test and refine this!
     if(det(vec) < 0)
-        error('Negative determinant of eigenvector matrix!');
+        vec(:,1) = -1*vec(:,1);
+        assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
     end
     plot(pStat(k).prior.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).prior.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 0]);
     plot(pStat(k).prior.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).prior.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 0]);
@@ -398,9 +454,12 @@ for k = 2:length(t_samp)
     % and add "ellipse" for posterior particle set at this time step (k)
     plot(Xpost(1,:),Xpost(2,:),'.','MarkerSize',2,'Color',[1 0.6 1]);
     [vec,val] = eig(pStat(k).post.cov);
-    vec = vec*diag(sign(diag(vec)));
+    % make sure that eigenvector matrix gives a right-handed coordinate system
+    % (in n-dimensions)... need det(vec) = 1.0 not -1.0
+    % TODO: may need to further test and refine this!
     if(det(vec) < 0)
-        error('Negative determinant of eigenvector matrix!');
+        vec(:,1) = -1*vec(:,1);
+        assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
     end
     plot(pStat(k).post.mean(1)+sqrt(val(1,1))*[-vec(1,1) vec(1,1)],pStat(k).post.mean(2)+sqrt(val(1,1))*[-vec(2,1) vec(2,1)],'-','LineWidth',2,'Color',[1 0 1]);
     plot(pStat(k).post.mean(1)+sqrt(val(2,2))*[-vec(1,2) vec(1,2)],pStat(k).post.mean(2)+sqrt(val(2,2))*[-vec(2,2) vec(2,2)],'-','LineWidth',2,'Color',[1 0 1]);
