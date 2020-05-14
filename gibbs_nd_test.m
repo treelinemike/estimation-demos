@@ -14,15 +14,15 @@ doShowSteps = 0;               % does nothing if using exernal Gibbs function
 doAnimate = 0;                 % does nothing if using exernal Gibbs function
 doMakeVideo = 0;               % only if animation enabled and not using external Gibbs
 stepsToAnimate = 50;           % if animating only show this many steps in Markov chain
-Np = 2000;          % number of particles to sample from the true PDF
-Kss = 0.125;       % expand patch of state space to explore by this factor times the span of samples on either side
-hss = 0.1;         % step size in state space TODO: allow different step sizes in each dimension
-NSD = 4;           % number of standard deviations to extend query points (+/-) in each dimension from mean
-bwScale = 1.0;     % multiply optimal bandwidth by this factor
+Np = 2000;                     % number of particles to sample from the true PDF
+Kss = 0.125;                   % expand patch of state space to explore by this factor times the span of samples on either side
+hss = 0.1;                     % step size in state space TODO: allow different step sizes in each dimension
+NSD = 4;                       % number of standard deviations to extend query points (+/-) in each dimension from mean
+bwScale = 1.0;                 % multiply optimal bandwidth by this factor
 
 % Gibbs Sampler Options
-gibbsBurnIn = 500;    % discard this many samples before capturing points
-gibbsM = 100;         % after burn in, capture every m-th sample
+gibbsBurnIn = 500;             % discard this many samples before capturing points
+gibbsM = 10;                  % after burn in, capture every m-th sample
 
 % true PDF parameters
 mu_true = [2 5]';
@@ -42,12 +42,12 @@ mu = mean(x_samp_pre,2);
 cov = 1/(size(x_samp_pre,2)-1)*(x_samp_pre-mu)*(x_samp_pre-mu)';
 [vec,val] = eig(cov);
 acos(vec(1,1))*180/pi
-% choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
-% standard basis
+% make sure that eigenvector matrix gives a right-handed coordinate system
+% (in n-dimensions)... need det(vec) = 1.0 not -1.0
 % TODO: may need to further test and refine this!
-vec = vec*diag(sign(diag(vec)));
 if(det(vec) < 0)
-    error('Negative determinant of eigenvector matrix!');
+    vec(:,1) = -1*vec(:,1);
+    assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
 end
 
 % assemble query point vectors for each eigen-direction
@@ -238,12 +238,12 @@ mu = mean(x_samp_post,2);
 cov = 1/(size(x_samp_post,2)-1)*(x_samp_post-mu)*(x_samp_post-mu)';
 [vec,val] = eig(cov);
 acos(vec(1,1))*180/pi
-% choose sign of eigenvectors s.t. rotated basis is within +/- 90deg of
-% standard basis
+% make sure that eigenvector matrix gives a right-handed coordinate system
+% (in n-dimensions)... need det(vec) = 1.0 not -1.0
 % TODO: may need to further test and refine this!
-vec = vec*diag(sign(diag(vec)));
 if(det(vec) < 0)
-    error('Negative determinant of eigenvector matrix!');
+    vec(:,1) = -1*vec(:,1);
+    assert(det(vec) > 0,'Negative determinant of eigenvector matrix - couldn''t be fixed!');
 end
 
 % plot principal axes of regularized particle set
