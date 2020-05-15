@@ -8,7 +8,7 @@ close all; clear; clc;
 rng('default');
 
 % options
-doUseExternalGibbsFcn = 1;
+doUseExternalGibbsFcn = 0;
 doOneStepOnly = 0;             % does nothing if using exernal Gibbs function
 doShowSteps = 0;               % does nothing if using exernal Gibbs function
 doAnimate = 0;                 % does nothing if using exernal Gibbs function
@@ -76,7 +76,7 @@ X2Q = reshape(x_qp(2,:),length(x_qp_vec{1}),length(x_qp_vec{2}));
 
 % plot samples and true PDF
 figure;
-if( ~doUseExternalGibbsFcn & doShowSteps)
+if(1)% ~doUseExternalGibbsFcn & doShowSteps)
     set(gcf,'Position',[1.562000e+02 1.562000e+02 1.194800e+03 6.058000e+02]);
     ax = subplot(2,3,[1 4]);
 else
@@ -110,7 +110,7 @@ ks_pdf = mvksdensity(x_samp_pre',x_qp','Kernel','epanechnikov','weights',q_samp,
 
 % reshape PDF
 KS_pdf = reshape(ks_pdf,size(X1Q));
-if( ~doUseExternalGibbsFcn & doShowSteps)
+if(1)% ~doUseExternalGibbsFcn & doShowSteps)
     ax(end+1) = subplot(2,3,[2 5]);
 else
     ax(end+1) = subplot(1,2,2);
@@ -180,12 +180,12 @@ else
             x = x_qp(:,xIdx);
             
             % plot results of stepping along this dimension if requested
-            if(doShowSteps)
-                subplot(2,3,[2 5]);
-                plot3(pointsAlongDim(1,:),pointsAlongDim(2,:),2*ones(size(pointsAlongDim,2)),'k.','MarkerSize',5);
-                plot3(x_qp(1,xIdx),x_qp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
-                zlim([0 3]);
-                
+            if(doShowSteps || gibbsIter == Nsteps)
+%                 subplot(2,3,[2 5]);
+%                 plot3(pointsAlongDim(1,:),pointsAlongDim(2,:),2*ones(size(pointsAlongDim,2)),'k.','MarkerSize',5);
+%                 plot3(x_qp(1,xIdx),x_qp(2,xIdx),2,'ro','MarkerSize',5,'LineWidth',2);
+%                 zlim([0 3]);
+%                 
                 % sample many points just to observe distribution
                 multiSampleLocalIdx = arrayfun(@(x) find(cdf >= x,1,'first'),rand(1,100));
                 
@@ -224,7 +224,7 @@ else
 end
 
 % show sampled point cloud
-if( ~doUseExternalGibbsFcn & doShowSteps)
+if(1)% ~doUseExternalGibbsFcn & doShowSteps)
     subplot(2,3,[2 5]);
 else
     subplot(1,2,2);
