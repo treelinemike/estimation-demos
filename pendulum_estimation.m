@@ -12,8 +12,8 @@ doAnimateSystem = 0;
 doShowDynamicsPlots = 1;
 resultPlotID = 2314;
 doSortInSIR = 1;         % easier to understand visually if sorted, but not necessary for algorithm to work
-doSaveAssimPlots = 1;
-doMakeVideo = 1;
+doSaveAssimPlots = 0;
+doMakeVideo = 0;
 
 % simulation time parameters
 t0 = 0;                  % [s] simulation start time
@@ -282,7 +282,7 @@ for k = 2:length(t_samp)
         % innovation
         % could use a different weighting scheme here
         %%%%% TODO: DO THIS OUTSIDE OF PARTICLE LOOP! %%%%%%%%%
-        w(particleIdx) = expm(-0.5*r(particleIdx)'*inv(COV_v)*r(particleIdx)); % using expm even though the argument of the exponential happens to be a scalar in this case
+        w(particleIdx) = expm(-0.5*r(particleIdx)'*inv(COV_v)*r(particleIdx)); % using expm even though the argument of the exponential WILL ALWAYS be a scalar!
         
     end
     toc
