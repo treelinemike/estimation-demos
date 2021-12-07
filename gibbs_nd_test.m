@@ -305,7 +305,7 @@ if(doAnimate & ~doUseExternalGibbsFcn)
         
     end
     if(doMakeVideo)
-        system('ffmpeg -y -r 2 -start_number 1 -i frame%003d.png -vf scale="trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4');     
+        system(['ffmpeg -y -r 2 -start_number 1 -i frame%03d.png -vf "format=rgba,scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -profile:v high -pix_fmt yuv420p -g 25 -r 25 output.mp4']);
         system('rm frame*.png');
     end
 end
